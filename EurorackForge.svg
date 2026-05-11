@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">FreeCAD Eurorack Panel Creator Icon</title>
+  <desc id="desc">A clean dark mode icon showing a classic Eurorack faceplate with mounting screws, knobs and patch jacks.</desc>
+  <defs>
+    <linearGradient id="panel" x1="176" y1="70" x2="336" y2="446" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f2f4f7"/>
+      <stop offset="0.48" stop-color="#d9dde4"/>
+      <stop offset="1" stop-color="#aeb6c3"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="160" y1="60" x2="352" y2="452" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#6f7886" stop-opacity="0.75"/>
+    </linearGradient>
+    <radialGradient id="jack" cx="50%" cy="42%" r="58%">
+      <stop offset="0" stop-color="#303744"/>
+      <stop offset="0.62" stop-color="#151a22"/>
+      <stop offset="1" stop-color="#06080c"/>
+    </radialGradient>
+    <radialGradient id="knob" cx="43%" cy="35%" r="65%">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="0.55" stop-color="#c4cbd5"/>
+      <stop offset="1" stop-color="#707987"/>
+    </radialGradient>
+    <filter id="shadow" x="-30%" y="-20%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="#000000"/>
+
+  <g filter="url(#shadow)">
+    <rect x="166" y="56" width="180" height="400" rx="24" fill="#080a0f" opacity="0.65"/>
+    <rect x="156" y="48" width="200" height="416" rx="28" fill="url(#edge)"/>
+    <rect x="164" y="56" width="184" height="400" rx="22" fill="url(#panel)"/>
+
+    <path d="M182 96h148" stroke="#828b99" stroke-width="3" stroke-linecap="round" opacity="0.48"/>
+    <path d="M182 416h148" stroke="#828b99" stroke-width="3" stroke-linecap="round" opacity="0.48"/>
+
+    <g fill="#111722">
+      <circle cx="188" cy="80" r="12"/>
+      <circle cx="324" cy="80" r="12"/>
+      <circle cx="188" cy="432" r="12"/>
+      <circle cx="324" cy="432" r="12"/>
+    </g>
+    <g stroke="#e9edf3" stroke-width="3" stroke-linecap="round" opacity="0.72">
+      <path d="M181 80h14"/>
+      <path d="M317 80h14"/>
+      <path d="M181 432h14"/>
+      <path d="M317 432h14"/>
+    </g>
+
+    <g>
+      <circle cx="256" cy="148" r="35" fill="url(#knob)"/>
+      <circle cx="256" cy="148" r="28" fill="none" stroke="#edf1f6" stroke-width="5" opacity="0.8"/>
+      <path d="M256 122v18" stroke="#313947" stroke-width="6" stroke-linecap="round"/>
+    </g>
+
+    <g>
+      <circle cx="224" cy="226" r="25" fill="url(#knob)"/>
+      <circle cx="288" cy="226" r="25" fill="url(#knob)"/>
+      <path d="M224 208v13" stroke="#313947" stroke-width="5" stroke-linecap="round"/>
+      <path d="M288 208v13" stroke="#313947" stroke-width="5" stroke-linecap="round"/>
+    </g>
+
+    <g>
+      <circle cx="224" cy="308" r="23" fill="url(#jack)"/>
+      <circle cx="288" cy="308" r="23" fill="url(#jack)"/>
+      <circle cx="224" cy="308" r="9" fill="#05070a" stroke="#596270" stroke-width="3"/>
+      <circle cx="288" cy="308" r="9" fill="#05070a" stroke="#596270" stroke-width="3"/>
+      <circle cx="224" cy="362" r="23" fill="url(#jack)"/>
+      <circle cx="288" cy="362" r="23" fill="url(#jack)"/>
+      <circle cx="224" cy="362" r="9" fill="#05070a" stroke="#596270" stroke-width="3"/>
+      <circle cx="288" cy="362" r="9" fill="#05070a" stroke="#596270" stroke-width="3"/>
+    </g>
+
+    <g stroke="#707986" stroke-width="2" stroke-linecap="round" opacity="0.56">
+      <path d="M206 276h36"/>
+      <path d="M270 276h36"/>
+      <path d="M206 392h36"/>
+      <path d="M270 392h36"/>
+    </g>
+  </g>
+</svg>
