@@ -8,6 +8,8 @@
   <maintainer email="your-email@example.com">Your Name</maintainer>
   <license file="LICENSE">MIT</license>
 
+  <icon>EurorackForge.svg</icon>
+
   <url type="repository">https://github.com/nathanaelnoir/EurorackForge</url>
   <url type="readme">https://github.com/nathanaelnoir/EurorackForge/blob/main/README.md</url>
 
