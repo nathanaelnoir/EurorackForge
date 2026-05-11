@@ -1,0 +1,239 @@
+import FreeCAD as App
+import Part
+
+try:
+    import FreeCADGui as Gui
+except Exception:
+    Gui = None
+
+try:
+    from PySide2 import QtWidgets
+except ImportError:
+    from PySide import QtGui as QtWidgets
+
+
+HP_MM = 5.08
+PANEL_HEIGHT = 128.5
+PANEL_THICKNESS = 2.0
+
+WIDTH_CLEARANCE = 0.30
+
+HOLE_DIAMETER = 3.2
+HOLE_RADIUS = HOLE_DIAMETER / 2.0
+
+SLOT_HEIGHT = 3.2
+SLOT_LENGTH = 7.0
+
+HOLE_X_FIRST = 7.5
+HOLE_Y_FROM_EDGE = 3.0
+
+FOUR_HOLES_START_HP = 12
+CENTER_SINGLE_HOLE_COLUMN = True
+
+
+def ask_hp_value():
+    hp, ok = QtWidgets.QInputDialog.getInt(
+        None,
+        "Create Eurorack Panel",
+        "Panel width in HP:",
+        8,
+        1,
+        168,
+        1
+    )
+
+    if not ok:
+        return None
+
+    return hp
+
+
+def ask_cutout_type():
+    options = ["Circles", "Horizontal slots"]
+
+    choice, ok = QtWidgets.QInputDialog.getItem(
+        None,
+        "Mounting Cutout Type",
+        "Choose mounting cutout type:",
+        options,
+        1,
+        False
+    )
+
+    if not ok:
+        return None
+
+    if choice == "Circles":
+        return "circles"
+
+    return "slots"
+
+
+def eurorack_panel_width(hp):
+    return hp * HP_MM - WIDTH_CLEARANCE
+
+
+def mounting_hole_x_positions(width, hp):
+    left_edge = -width / 2.0
+
+    if hp < FOUR_HOLES_START_HP:
+        if CENTER_SINGLE_HOLE_COLUMN:
+            return [0.0]
+
+        return [left_edge + HOLE_X_FIRST]
+
+    left_x = left_edge + HOLE_X_FIRST
+    right_x = left_edge + HOLE_X_FIRST + (hp - 3) * HP_MM
+
+    return [left_x, right_x]
+
+
+def mounting_hole_y_positions():
+    bottom_y = -PANEL_HEIGHT / 2.0
+    top_y = PANEL_HEIGHT / 2.0
+
+    return [
+        bottom_y + HOLE_Y_FROM_EDGE,
+        top_y - HOLE_Y_FROM_EDGE
+    ]
+
+
+def make_round_hole_cutter(x, y):
+    return Part.makeCylinder(
+        HOLE_RADIUS,
+        PANEL_THICKNESS + 2.0,
+        App.Vector(x, y, -1.0),
+        App.Vector(0, 0, 1)
+    )
+
+
+def make_horizontal_slot_cutter(x, y):
+    radius = SLOT_HEIGHT / 2.0
+    straight_length = SLOT_LENGTH - SLOT_HEIGHT
+
+    left_center_x = x - straight_length / 2.0
+    right_center_x = x + straight_length / 2.0
+
+    left_round = Part.makeCylinder(
+        radius,
+        PANEL_THICKNESS + 2.0,
+        App.Vector(left_center_x, y, -1.0),
+        App.Vector(0, 0, 1)
+    )
+
+    right_round = Part.makeCylinder(
+        radius,
+        PANEL_THICKNESS + 2.0,
+        App.Vector(right_center_x, y, -1.0),
+        App.Vector(0, 0, 1)
+    )
+
+    center_box = Part.makeBox(
+        straight_length,
+        SLOT_HEIGHT,
+        PANEL_THICKNESS + 2.0,
+        App.Vector(
+            x - straight_length / 2.0,
+            y - SLOT_HEIGHT / 2.0,
+            -1.0
+        )
+    )
+
+    slot = left_round.fuse(right_round)
+    slot = slot.fuse(center_box)
+
+    return slot
+
+
+def make_mounting_cutter(x, y, cutout_type):
+    if cutout_type == "circles":
+        return make_round_hole_cutter(x, y)
+
+    return make_horizontal_slot_cutter(x, y)
+
+
+def make_panel_shape(width, hp, cutout_type):
+    panel = Part.makeBox(
+        width,
+        PANEL_HEIGHT,
+        PANEL_THICKNESS,
+        App.Vector(
+            -width / 2.0,
+            -PANEL_HEIGHT / 2.0,
+            0
+        )
+    )
+
+    for x in mounting_hole_x_positions(width, hp):
+        for y in mounting_hole_y_positions():
+            cutter = make_mounting_cutter(x, y, cutout_type)
+            panel = panel.cut(cutter)
+
+    panel = panel.removeSplitter()
+    return panel
+
+
+def create_body_from_shape(doc, shape, hp, cutout_type):
+    clean_name = f"Eurorack_{hp}HP_{cutout_type}"
+
+    source = doc.addObject("Part::Feature", clean_name + "_BaseShape")
+    source.Shape = shape
+    source.Label = clean_name + " Base Shape"
+
+    body = doc.addObject("PartDesign::Body", clean_name + "_Body")
+    body.Label = f"Eurorack {hp}HP Panel - 2mm - {cutout_type}"
+
+    body.BaseFeature = source
+
+    try:
+        source.ViewObject.Visibility = False
+    except Exception:
+        pass
+
+    return body, source
+
+
+def create_single_eurorack_panel():
+    hp = ask_hp_value()
+
+    if hp is None:
+        return
+
+    cutout_type = ask_cutout_type()
+
+    if cutout_type is None:
+        return
+
+    doc = App.ActiveDocument
+    if doc is None:
+        doc = App.newDocument("Eurorack_Panel")
+
+    width = eurorack_panel_width(hp)
+    shape = make_panel_shape(width, hp, cutout_type)
+
+    body, source = create_body_from_shape(doc, shape, hp, cutout_type)
+
+    doc.recompute()
+
+    if Gui is not None:
+        try:
+            Gui.Selection.clearSelection()
+            Gui.Selection.addSelection(body)
+            Gui.ActiveDocument.ActiveView.fitAll()
+        except Exception:
+            pass
+
+    App.Console.PrintMessage(
+        "\nCreated centered Eurorack PartDesign Body\n"
+        f"HP: {hp}\n"
+        f"Width: {width:.2f} mm\n"
+        f"Height: {PANEL_HEIGHT:.2f} mm\n"
+        f"Thickness: {PANEL_THICKNESS:.2f} mm\n"
+        f"Cutout type: {cutout_type}\n"
+        f"Round hole diameter: {HOLE_DIAMETER:.2f} mm\n"
+        f"Slot size: {SLOT_LENGTH:.2f} mm x {SLOT_HEIGHT:.2f} mm\n"
+        f"X range: {-width / 2.0:.2f} to {width / 2.0:.2f} mm\n"
+        f"Y range: {-PANEL_HEIGHT / 2.0:.2f} to {PANEL_HEIGHT / 2.0:.2f} mm\n"
+        f"X positions: {mounting_hole_x_positions(width, hp)}\n"
+        f"Y positions: {mounting_hole_y_positions()}\n\n"
+    )

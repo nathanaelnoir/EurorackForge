@@ -1,7 +1,7 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<?xml version="1.0" encoding="UTF-8"?>
 <package format="1">
   <name>EurorackForge</name>
-  <description>A simple FreeCAD macro for generating Eurorack facepanels.</description>
+  <description>A FreeCAD workbench for generating Eurorack front panels.</description>
   <version>1.0.0</version>
   <date>2026-05-11</date>
 
@@ -12,13 +12,12 @@
 
   <url type="repository">https://github.com/nathanaelnoir/EurorackForge</url>
   <url type="readme">https://github.com/nathanaelnoir/EurorackForge/blob/main/README.md</url>
+  <url type="tracker">https://github.com/nathanaelnoir/EurorackForge/issues</url>
 
   <content>
-    <macro>
-      <name>EurorackForge</name>
-      <description>A simple FreeCAD macro for generating Eurorack facepanels.</description>
-      <file>EurorackForge.FCMacro</file>
-      <icon>EurorackForge.svg</icon>
-    </macro>
+    <workbench>
+      <classname>EurorackForgeWorkbench</classname>
+      <subdirectory>./</subdirectory>
+    </workbench>
   </content>
 </package>
