@@ -1,12 +1,18 @@
+import os
+
 import FreeCADGui as Gui
+
+
+def resource_path(filename):
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
 
 
 class CreateEurorackPanelCommand:
     def GetResources(self):
         return {
-            "Pixmap": "/Users/sarahmair/Library/Application Support/FreeCAD/v1-1/Mod/EurorackForge/EurorackForge.svg",
-            "MenuText": "Create Eurorack Panel",
-            "ToolTip": "Create a Eurorack front panel with mounting holes or slots.",
+            "Pixmap": resource_path("EurorackForge.svg"),
+            "MenuText": "Create Faceplate",
+            "ToolTip": "Open the Eurorack faceplate task panel with Doepfer, 1U, Kosmo, and custom formats.",
             "Accel": "E, P"
         }
 
@@ -24,7 +30,7 @@ Gui.addCommand("EurorackForge_CreatePanel", CreateEurorackPanelCommand())
 class EurorackForgeWorkbench(Gui.Workbench):
     MenuText = "Eurorack Forge"
     ToolTip = "Tools for creating Eurorack front panels."
-    Icon = "/Users/sarahmair/Library/Application Support/FreeCAD/v1-1/Mod/EurorackForge/EurorackForge.svg"
+    Icon = resource_path("EurorackForge.svg")
 
     def Initialize(self):
         self.appendToolbar("Eurorack Forge", ["EurorackForge_CreatePanel"])

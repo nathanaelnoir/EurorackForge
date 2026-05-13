@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>A FreeCAD macro for generating Eurorack facepanels.</strong>
+  <strong>A FreeCAD workbench for creating Eurorack faceplates.</strong>
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 
 ## Overview
 
-**EurorackForge** is a FreeCAD macro for creating Eurorack synthesizer facepanels directly inside FreeCAD.
+**EurorackForge** is a FreeCAD workbench for creating Eurorack synthesizer faceplates directly inside FreeCAD.
 
 It is designed to help makers, musicians, DIY synthesizer builders, and hardware designers quickly generate panel geometry for Eurorack modules.
 
@@ -33,12 +33,14 @@ Typical use cases include:
 
 ## Features
 
-- Generates Eurorack-style facepanel geometry in FreeCAD
-- Installs as a normal FreeCAD macro
+- Generates Doepfer-style Eurorack panels by default
+- Also supports Intellijel 1U, Pulp Logic 1U, Kosmo, and custom panel formats
+- Opens a guided task panel with presets, a live summary, and a 2D preview
+- Lets you save, load, and delete panel presets locally
 - Includes a custom SVG icon
 - Can be installed through FreeCAD Addon Manager as a custom GitHub repository
-- Can be added manually to a toolbar such as **My Tools**
-- Lightweight: no custom workbench required
+- Exposes the generator from the Eurorack Forge workbench toolbar
+- Keeps a macro wrapper for compatibility
 
 ---
 
@@ -442,18 +444,13 @@ Features:
 
 # Current limitations
 
-EurorackForge is distributed as a FreeCAD macro, not a FreeCAD workbench.
+EurorackForge ships as a FreeCAD workbench with a macro wrapper for compatibility.
 
 That means:
 
-- Addon Manager can install the macro.
-- The icon can be included.
-- Users can add it to their toolbar manually.
-- Toolbar placement is not automatic.
-
-Automatic toolbar creation normally requires a FreeCAD workbench.
-
-This project intentionally remains a lightweight macro.
+- Addon Manager can install the workbench package.
+- The Create Faceplate command appears in the Eurorack Forge toolbar and menu.
+- The macro entry point still works for users who prefer launching it from the Macro dialog.
 
 ---
 
