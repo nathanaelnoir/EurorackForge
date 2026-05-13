@@ -1,5 +1,7 @@
 import json
 import os
+import math
+import re
 
 import FreeCAD as App
 import Part
@@ -667,6 +669,11 @@ def create_body_from_shape(doc, shape, hp, cutout_type):
     body.BaseFeature = source
 
     try:
+        source.addProperty("App::PropertyString", "EurorackForgeSpecJSON", "EurorackForge", "Stored panel specification for export helpers.")
+    except Exception:
+        pass
+
+    try:
         source.ViewObject.Visibility = False
     except Exception:
         pass
@@ -685,6 +692,26 @@ def create_body_from_spec(doc, shape, spec):
     body.Label = f"{spec['display_name']} - {spec['thickness_mm']:.1f}mm - {spec['cutout_type']}"
 
     body.BaseFeature = source
+
+    try:
+        body.addProperty("App::PropertyString", "EurorackForgeSpecJSON", "EurorackForge", "Stored panel specification for export helpers.")
+    except Exception:
+        pass
+
+    try:
+        source.addProperty("App::PropertyString", "EurorackForgeSpecJSON", "EurorackForge", "Stored panel specification for export helpers.")
+    except Exception:
+        pass
+
+    try:
+        body.EurorackForgeSpecJSON = json.dumps(spec)
+    except Exception:
+        pass
+
+    try:
+        source.EurorackForgeSpecJSON = json.dumps(spec)
+    except Exception:
+        pass
 
     try:
         source.ViewObject.Visibility = False
@@ -2084,13 +2111,35 @@ def _shape_to_kicad_edgecuts(shape, segments_per_curve=32):
 
     segments = []
     for wire in getattr(face, "Wires", []) or []:
-        segments.extend(_wire_to_kicad_segments(wire, segments_per_curve))
+        try:
+            points = list(wire.discretize(Number=max(8, int(segments_per_curve))))
+        except Exception:
+            points = []
+
+        if len(points) < 2:
+            points = []
+            for edge in getattr(wire, "Edges", []) or []:
+                points.extend(_edge_points_for_kicad(edge, segments_per_curve))
+
+        if len(points) < 2:
+            continue
+
+        ordered = []
+        for point in points:
+            if not ordered or not _same_xy(ordered[-1], point):
+                ordered.append(point)
+
+        if len(ordered) > 1 and not _same_xy(ordered[0], ordered[-1]):
+            ordered.append(ordered[0])
+
+        for start, end in zip(ordered, ordered[1:]):
+            if not _same_xy(start, end):
+                segments.append((start, end))
 
     return segments
 
 
-def _kicad_pcb_text(shape, segments_per_curve=32, thickness_mm=1.6):
-    edgecuts = _shape_to_kicad_edgecuts(shape, segments_per_curve)
+def _kicad_pcb_text_from_edgecuts(edgecuts, thickness_mm=1.6):
     lines = [
         '(kicad_pcb (version 20211014) (generator "EurorackForge")',
         f'  (general (thickness {_kicad_num(thickness_mm)}))',
@@ -2112,8 +2161,230 @@ def _kicad_pcb_text(shape, segments_per_curve=32, thickness_mm=1.6):
     return "\n".join(lines) + "\n"
 
 
-def _kicad_edge_svg_text(shape, segments_per_curve=32):
+def _kicad_pcb_text(shape, segments_per_curve=32, thickness_mm=1.6):
     edgecuts = _shape_to_kicad_edgecuts(shape, segments_per_curve)
+    return _kicad_pcb_text_from_edgecuts(edgecuts, thickness_mm=thickness_mm)
+
+
+def _export_spec_from_obj(obj):
+    if obj is None:
+        return None
+
+    spec_text = getattr(obj, "EurorackForgeSpecJSON", "")
+    if spec_text:
+        try:
+            spec = json.loads(spec_text)
+            if isinstance(spec, dict):
+                return spec
+        except Exception:
+            pass
+
+    base = getattr(obj, "BaseFeature", None)
+    if base is not None:
+        spec_text = getattr(base, "EurorackForgeSpecJSON", "")
+        if spec_text:
+            try:
+                spec = json.loads(spec_text)
+                if isinstance(spec, dict):
+                    return spec
+            except Exception:
+                pass
+
+    def parse_label(label):
+        if not label:
+            return None
+
+        patterns = [
+            (STANDARD_DOEPFER, r"^Doepfer Eurorack (\d+) HP - ([0-9.]+)mm - (circles|slots)$"),
+            (STANDARD_INTELLIJEL_1U, r"^Intellijel 1U (\d+) HP(?: \[BETA\])? - ([0-9.]+)mm - (circles|slots)$"),
+            (STANDARD_PULP_LOGIC_1U, r"^Pulp Logic 1U (\d+) tile\(s\)(?: \[BETA\])? - ([0-9.]+)mm - (circles|slots)$"),
+            (STANDARD_KOSMO, r"^Kosmo ([0-9.]+) mm(?: \[BETA\])? - ([0-9.]+)mm - (circles|slots)$"),
+            (STANDARD_CUSTOM, r"^Custom panel(?: \[BETA\])? - ([0-9.]+)mm - (circles|slots)$"),
+        ]
+
+        for standard_key, pattern in patterns:
+            match = re.match(pattern, label)
+            if not match:
+                continue
+
+            groups = match.groups()
+            cutout_type = groups[-1]
+            if standard_key == STANDARD_DOEPFER:
+                hp = int(groups[0])
+                thickness_mm = float(groups[1])
+                return build_panel_spec(
+                    STANDARD_DOEPFER,
+                    cutout_type,
+                    doepfer_hp=hp,
+                    doepfer_thickness_mm=thickness_mm,
+                )
+
+            if standard_key == STANDARD_INTELLIJEL_1U:
+                hp = int(groups[0])
+                thickness_mm = float(groups[1])
+                return build_panel_spec(
+                    STANDARD_INTELLIJEL_1U,
+                    cutout_type,
+                    doepfer_hp=hp,
+                    custom_thickness_mm=thickness_mm,
+                )
+
+            if standard_key == STANDARD_PULP_LOGIC_1U:
+                tiles = int(groups[0])
+                thickness_mm = float(groups[1])
+                return build_panel_spec(
+                    STANDARD_PULP_LOGIC_1U,
+                    cutout_type,
+                    doepfer_hp=tiles,
+                    custom_thickness_mm=thickness_mm,
+                )
+
+            if standard_key == STANDARD_KOSMO:
+                width_mm = float(groups[0])
+                thickness_mm = float(groups[1])
+                units = max(1, int(round(width_mm / KOSMO_UNIT_MM)))
+                return build_panel_spec(
+                    STANDARD_KOSMO,
+                    cutout_type,
+                    kosmo_units=units,
+                    custom_thickness_mm=thickness_mm,
+                )
+
+            if standard_key == STANDARD_CUSTOM:
+                thickness_mm = float(groups[0])
+                return build_panel_spec(
+                    STANDARD_CUSTOM,
+                    cutout_type,
+                    custom_width_mm=float(getattr(obj.Shape.BoundBox, "XLength", 80.0)) if getattr(obj, "Shape", None) is not None else 80.0,
+                    custom_height_mm=float(getattr(obj.Shape.BoundBox, "YLength", 128.5)) if getattr(obj, "Shape", None) is not None else 128.5,
+                    custom_thickness_mm=thickness_mm,
+                )
+
+        return None
+
+    label_spec = parse_label(getattr(obj, "Label", ""))
+    if label_spec is not None:
+        return label_spec
+
+    label_spec = parse_label(getattr(base, "Label", "") if base is not None else "")
+    if label_spec is not None:
+        return label_spec
+
+    return None
+
+
+def _circle_loop(cx, cy, radius, segments):
+    steps = max(8, int(segments))
+    points = []
+    for index in range(steps):
+        angle = (2.0 * 3.141592653589793 * index) / steps
+        points.append(App.Vector(cx + radius * math.cos(angle), cy + radius * math.sin(angle), 0))
+    points.append(points[0])
+    return points
+
+
+def _capsule_loop(cx, cy, length, height, segments):
+    radius = height / 2.0
+    straight = max(0.0, length - height)
+    arc_segments = max(4, int(segments) // 2)
+    left_center_x = cx - straight / 2.0
+    right_center_x = cx + straight / 2.0
+
+    def arc_points(center_x, start_angle, end_angle):
+        segment_count = max(2, arc_segments)
+        values = []
+        for index in range(segment_count + 1):
+            t = index / float(segment_count)
+            angle = start_angle + (end_angle - start_angle) * t
+            values.append(App.Vector(center_x + radius * math.cos(angle), cy + radius * math.sin(angle), 0))
+        return values
+
+    left_top = App.Vector(left_center_x, cy + radius, 0)
+    right_top = App.Vector(right_center_x, cy + radius, 0)
+    right_bottom = App.Vector(right_center_x, cy - radius, 0)
+    left_bottom = App.Vector(left_center_x, cy - radius, 0)
+
+    points = [left_top]
+    points.append(right_top)
+    points.extend(arc_points(right_center_x, math.pi / 2.0, -math.pi / 2.0)[1:])
+    points.append(left_bottom)
+    points.extend(arc_points(left_center_x, -math.pi / 2.0, math.pi / 2.0)[1:])
+
+    points.append(points[0])
+    return points
+
+
+def _loops_from_spec(spec, segments_per_curve=32):
+    if not isinstance(spec, dict):
+        return []
+
+    loops = []
+    width = float(spec["width_mm"])
+    height = float(spec["height_mm"])
+    half_width = width / 2.0
+    half_height = height / 2.0
+
+    outer = [
+        App.Vector(-half_width, -half_height, 0),
+        App.Vector(half_width, -half_height, 0),
+        App.Vector(half_width, half_height, 0),
+        App.Vector(-half_width, half_height, 0),
+        App.Vector(-half_width, -half_height, 0),
+    ]
+    loops.append(outer)
+
+    if spec["cutout_type"] == "circles":
+        radius = float(spec["hole_diameter_mm"]) / 2.0
+        for x, y in generic_mounting_points(spec):
+            loops.append(_circle_loop(x, y, radius, segments_per_curve))
+    else:
+        slot_length = float(spec["slot_length_mm"])
+        slot_height = float(spec["slot_height_mm"])
+        for x, y in generic_mounting_points(spec):
+            loops.append(_capsule_loop(x, y, slot_length, slot_height, segments_per_curve))
+
+    return loops
+
+
+def _loops_to_edgecuts_lines(loops):
+    lines = []
+    for loop in loops:
+        if len(loop) < 2:
+            continue
+        for start, end in zip(loop, loop[1:]):
+            if _same_xy(start, end):
+                continue
+            lines.append((start, end))
+    return lines
+
+
+def _kicad_pcb_text_from_spec(spec, segments_per_curve=32, thickness_mm=1.6):
+    loops = _loops_from_spec(spec, segments_per_curve)
+    edgecuts = _loops_to_edgecuts_lines(loops)
+    lines = [
+        '(kicad_pcb (version 20211014) (generator "EurorackForge")',
+        f'  (general (thickness {_kicad_num(thickness_mm)}))',
+        '  (paper "A4")',
+        '  (layers',
+        '    (0 "F.Cu" signal)',
+        '    (31 "B.Cu" signal)',
+        '    (44 "Edge.Cuts" user)',
+        '  )',
+    ]
+
+    for start, end in edgecuts:
+        lines.append(
+            f'  (gr_line (start {_kicad_point_text(start)}) (end {_kicad_point_text(end)}) '
+            '(layer "Edge.Cuts") (width 0.1))'
+        )
+
+    lines.append(')')
+    return "\n".join(lines) + "\n"
+
+
+def _kicad_edge_svg_text_from_spec(spec, segments_per_curve=32):
+    loops = _loops_from_spec(spec, segments_per_curve)
+    edgecuts = _loops_to_edgecuts_lines(loops)
     if not edgecuts:
         return None
 
@@ -2154,6 +2425,80 @@ def _kicad_edge_svg_text(shape, segments_per_curve=32):
         '</svg>',
     ])
     return "\n".join(lines) + "\n"
+
+
+def _kicad_edge_svg_text_from_edgecuts(edgecuts):
+    if not edgecuts:
+        return None
+
+    all_points = [point for segment in edgecuts for point in segment]
+    min_x = min(point.x for point in all_points)
+    max_x = max(point.x for point in all_points)
+    min_y = min(point.y for point in all_points)
+    max_y = max(point.y for point in all_points)
+    width = max(1.0, max_x - min_x)
+    height = max(1.0, max_y - min_y)
+    pad = max(width, height) * 0.05
+
+    def svg_x(value):
+        return value - min_x + pad
+
+    def svg_y(value):
+        return (max_y - value) + pad
+
+    svg_width = width + pad * 2.0
+    svg_height = height + pad * 2.0
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
+        '<svg xmlns="http://www.w3.org/2000/svg" version="1.1"',
+        f'     width="{_kicad_num(svg_width)}mm" height="{_kicad_num(svg_height)}mm"',
+        f'     viewBox="0 0 {_kicad_num(svg_width)} {_kicad_num(svg_height)}">',
+        '  <g fill="none" stroke="#000000" stroke-width="0.1" stroke-linecap="round" stroke-linejoin="round">',
+    ]
+
+    for start, end in edgecuts:
+        lines.append(
+            f'    <line x1="{_kicad_num(svg_x(start.x))}" y1="{_kicad_num(svg_y(start.y))}" '
+            f'x2="{_kicad_num(svg_x(end.x))}" y2="{_kicad_num(svg_y(end.y))}" />'
+        )
+
+    lines.extend([
+        '  </g>',
+        '</svg>',
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def _kicad_edge_svg_text(shape, segments_per_curve=32):
+    edgecuts = _shape_to_kicad_edgecuts(shape, segments_per_curve)
+    return _kicad_edge_svg_text_from_edgecuts(edgecuts)
+
+
+def _kicad_edgecuts_from_obj(obj, segments_per_curve=32):
+    if obj is None:
+        return []
+
+    shape = getattr(obj, "Shape", None)
+    if shape is not None and not getattr(shape, "isNull", lambda: True)():
+        edgecuts = _shape_to_kicad_edgecuts(shape, segments_per_curve)
+        if edgecuts:
+            return edgecuts
+
+    base = getattr(obj, "BaseFeature", None)
+    if base is not None:
+        base_shape = getattr(base, "Shape", None)
+        if base_shape is not None and not getattr(base_shape, "isNull", lambda: True)():
+            edgecuts = _shape_to_kicad_edgecuts(base_shape, segments_per_curve)
+            if edgecuts:
+                return edgecuts
+
+    spec = _export_spec_from_obj(obj)
+    if spec is not None:
+        loops = _loops_from_spec(spec, segments_per_curve)
+        return _loops_to_edgecuts_lines(loops)
+
+    return []
 
 
 def _selected_export_target():
@@ -2418,10 +2763,6 @@ def export_selected_object_to_kicad_pcb(obj=None, filename=None, segments_per_cu
         if obj is None:
             return False, "Select a panel body in the model tree first."
 
-    shape = getattr(obj, "Shape", None)
-    if shape is None or getattr(shape, "isNull", lambda: True)():
-        return False, "The selected object does not have a valid shape to export."
-
     if filename is None:
         try:
             from PySide6 import QtWidgets
@@ -2451,12 +2792,19 @@ def export_selected_object_to_kicad_pcb(obj=None, filename=None, segments_per_cu
             filename += ".kicad_pcb"
 
     try:
+        edgecuts = _kicad_edgecuts_from_obj(obj, segments_per_curve=int(segments_per_curve))
+        if not edgecuts:
+            return False, "Could not derive KiCad Edge.Cuts geometry from the selected shape."
+
         thickness_mm = 1.6
-        try:
-            thickness_mm = float(getattr(shape.BoundBox, "ZLength", thickness_mm) or thickness_mm)
-        except Exception:
-            pass
-        board_text = _kicad_pcb_text(shape, segments_per_curve=int(segments_per_curve), thickness_mm=thickness_mm)
+        spec = _export_spec_from_obj(obj)
+        if spec is not None:
+            try:
+                thickness_mm = float(spec.get("thickness_mm", thickness_mm))
+            except Exception:
+                pass
+
+        board_text = _kicad_pcb_text_from_edgecuts(edgecuts, thickness_mm=thickness_mm)
         with open(filename, "w", encoding="utf-8") as handle:
             handle.write(board_text)
     except Exception as exc:
@@ -2470,10 +2818,6 @@ def export_selected_object_to_kicad_svg(obj=None, filename=None, segments_per_cu
         obj = _selected_export_target()
         if obj is None:
             return False, "Select a panel body in the model tree first."
-
-    shape = getattr(obj, "Shape", None)
-    if shape is None or getattr(shape, "isNull", lambda: True)():
-        return False, "The selected object does not have a valid shape to export."
 
     if filename is None:
         try:
@@ -2504,9 +2848,10 @@ def export_selected_object_to_kicad_svg(obj=None, filename=None, segments_per_cu
             filename += ".svg"
 
     try:
-        svg_text = _kicad_edge_svg_text(shape, segments_per_curve=int(segments_per_curve))
-        if not svg_text:
+        edgecuts = _kicad_edgecuts_from_obj(obj, segments_per_curve=int(segments_per_curve))
+        if not edgecuts:
             return False, "Could not derive Edge.Cuts geometry from the selected shape."
+        svg_text = _kicad_edge_svg_text_from_edgecuts(edgecuts)
         with open(filename, "w", encoding="utf-8") as handle:
             handle.write(svg_text)
     except Exception as exc:
