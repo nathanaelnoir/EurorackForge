@@ -37,6 +37,7 @@ Typical use cases include:
 - Also supports Intellijel 1U, Pulp Logic 1U, Kosmo, and custom panel formats
 - Opens a guided task panel with presets, a live summary, and a 2D preview
 - Lets you save, load, and delete panel presets locally
+- Opens an export dialog for STL, SVG, PNG, and KiCad PCB output
 - Includes a custom SVG icon
 - Can be installed through FreeCAD Addon Manager as a custom GitHub repository
 - Exposes the generator from the Eurorack Forge workbench toolbar
@@ -313,6 +314,19 @@ My Tools → EurorackForge button
 ```
 
 The macro will generate Eurorack facepanel geometry inside the active FreeCAD document.
+
+To export a panel, select the panel body in the model tree and use:
+
+```text
+Eurorack Forge → Export Panel
+```
+
+The export dialog lets you choose:
+
+- STL for the solid body
+- SVG for vector geometry
+- PNG for a rendered image of the current view
+- KiCad PCB for Edge.Cuts-only board geometry
 
 If no document is open, the macro may create a new one depending on the macro implementation.
 

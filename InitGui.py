@@ -1,16 +1,15 @@
-import os
-
+import FreeCAD as App
 import FreeCADGui as Gui
-
-
-def resource_path(filename):
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
 
 
 class CreateEurorackPanelCommand:
     def GetResources(self):
+        import os
+        import EurorackForge
+
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(EurorackForge.__file__)), "EurorackForge.svg")
         return {
-            "Pixmap": resource_path("EurorackForge.svg"),
+            "Pixmap": icon_path,
             "MenuText": "Create Faceplate",
             "ToolTip": "Open the Eurorack faceplate task panel with Doepfer, 1U, Kosmo, and custom formats.",
             "Accel": "E, P"
@@ -27,14 +26,39 @@ class CreateEurorackPanelCommand:
 Gui.addCommand("EurorackForge_CreatePanel", CreateEurorackPanelCommand())
 
 
+class ExportPanelCommand:
+    def GetResources(self):
+        import os
+        import EurorackForge
+
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(EurorackForge.__file__)), "EurorackForgeExport.svg")
+        return {
+            "Pixmap": icon_path,
+            "MenuText": "Export Panel",
+            "ToolTip": "Open the export dialog for STL, SVG, or PNG.",
+        }
+
+    def Activated(self):
+        import EurorackForge
+
+        EurorackForge.open_export_dialog()
+
+    def IsActive(self):
+        return Gui.ActiveDocument is not None
+
+
+Gui.addCommand("EurorackForge_ExportPanel", ExportPanelCommand())
+
+
 class EurorackForgeWorkbench(Gui.Workbench):
     MenuText = "Eurorack Forge"
     ToolTip = "Tools for creating Eurorack front panels."
-    Icon = resource_path("EurorackForge.svg")
+    Icon = "EurorackForge.svg"
 
     def Initialize(self):
-        self.appendToolbar("Eurorack Forge", ["EurorackForge_CreatePanel"])
-        self.appendMenu("Eurorack Forge", ["EurorackForge_CreatePanel"])
+        commands = ["EurorackForge_CreatePanel", "EurorackForge_ExportPanel"]
+        self.appendToolbar("Eurorack Forge", commands)
+        self.appendMenu("Eurorack Forge", commands)
 
     def Activated(self):
         pass
@@ -43,7 +67,7 @@ class EurorackForgeWorkbench(Gui.Workbench):
         pass
 
     def ContextMenu(self, recipient):
-        self.appendContextMenu("Eurorack Forge", ["EurorackForge_CreatePanel"])
+        self.appendContextMenu("Eurorack Forge", ["EurorackForge_CreatePanel", "EurorackForge_ExportPanel"])
 
     def GetClassName(self):
         return "Gui::PythonWorkbench"

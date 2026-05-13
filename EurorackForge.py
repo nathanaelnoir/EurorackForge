@@ -42,6 +42,14 @@ STANDARD_PULP_LOGIC_1U = "pulplogic_1u"
 STANDARD_KOSMO = "kosmo"
 STANDARD_CUSTOM = "custom"
 
+DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT = "upper_left_lower_right"
+DOEPFER_NARROW_UPPER_RIGHT_LOWER_LEFT = "upper_right_lower_left"
+
+DOEPFER_NARROW_DIAGONAL_OPTIONS = [
+    (DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT, "Upper-left / lower-right"),
+    (DOEPFER_NARROW_UPPER_RIGHT_LOWER_LEFT, "Upper-right / lower-left"),
+]
+
 STANDARD_OPTIONS = [
     (STANDARD_DOEPFER, "Doepfer Eurorack"),
     (STANDARD_INTELLIJEL_1U, "Intellijel 1U"),
@@ -148,6 +156,10 @@ def format_positions(values):
     return "[" + ", ".join(f"{value:.2f}" for value in values) + "]"
 
 
+def format_point_positions(points):
+    return "[" + ", ".join(f"({x:.2f}, {y:.2f})" for x, y in points) + "]"
+
+
 def format_mm(value):
     return f"{value:.2f} mm"
 
@@ -177,12 +189,28 @@ def kosmo_width_mm(units):
     return units * KOSMO_UNIT_MM
 
 
+def effective_slot_length_mm(width_mm, x_margin_mm, slot_height_mm=DEFAULT_SLOT_HEIGHT_MM, target_length_mm=DEFAULT_SLOT_LENGTH_MM):
+    edge_distance = max(0.0, min(x_margin_mm, width_mm - x_margin_mm))
+    available_length = 2.0 * edge_distance
+    return min(target_length_mm, max(slot_height_mm, available_length))
+
+
+def doepfer_narrow_layout_label(layout_key):
+    for key, label in DOEPFER_NARROW_DIAGONAL_OPTIONS:
+        if key == layout_key:
+            return label
+
+    return DOEPFER_NARROW_DIAGONAL_OPTIONS[0][1]
+
+
 def build_panel_spec(
     standard_key,
     cutout_type,
     *,
     doepfer_hp=8,
     doepfer_center_single_hole_column=CENTER_SINGLE_HOLE_COLUMN,
+    doepfer_narrow_diagonal_key=DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT,
+    doepfer_thickness_mm=PANEL_THICKNESS,
     kosmo_units=8,
     custom_width_mm=80.0,
     custom_height_mm=128.5,
@@ -191,12 +219,16 @@ def build_panel_spec(
     custom_hole_x_margin_mm=7.5,
     custom_hole_y_margin_mm=3.0,
     custom_layout_key="corners",
+    top_clearance_mm=10.0,
+    bottom_clearance_mm=10.0,
 ):
+    beta_suffix = "" if standard_key == STANDARD_DOEPFER else " [BETA]"
+
     if standard_key == STANDARD_DOEPFER:
         width_value = doepfer_hp
         width_mm = doepfer_width_mm(width_value)
         height_mm = PANEL_HEIGHT
-        thickness_mm = PANEL_THICKNESS
+        thickness_mm = doepfer_thickness_mm
         hole_diameter_mm = HOLE_DIAMETER
         hole_x_margin_mm = HOLE_X_FIRST
         hole_y_margin_mm = HOLE_Y_FROM_EDGE
@@ -205,7 +237,7 @@ def build_panel_spec(
         width_display = f"{width_value} HP"
         display_name = f"Doepfer Eurorack {width_value} HP"
         conformance_note = (
-            "Doepfer-style 3U panel with 5.08 mm HP grid, 128.5 mm height, and 2 mm thickness."
+            f"Doepfer-style 3U panel with 5.08 mm HP grid, 128.5 mm height, and {thickness_mm:.1f} mm thickness."
         )
     elif standard_key == STANDARD_INTELLIJEL_1U:
         width_value = doepfer_hp
@@ -218,9 +250,9 @@ def build_panel_spec(
         hole_layout_key = "corners"
         width_unit_label = "HP"
         width_display = f"{width_value} HP"
-        display_name = f"Intellijel 1U {width_value} HP"
+        display_name = f"Intellijel 1U {width_value} HP{beta_suffix}"
         conformance_note = (
-            "Intellijel-style 1U panel with a 39.65 mm row height and 3 mm corner margins."
+            "BETA: Intellijel-style 1U panel with a 39.65 mm row height and 3 mm corner margins."
         )
     elif standard_key == STANDARD_PULP_LOGIC_1U:
         width_value = doepfer_hp
@@ -233,9 +265,9 @@ def build_panel_spec(
         hole_layout_key = "corners"
         width_unit_label = "tiles"
         width_display = f"{width_value} tile(s) / {width_value * 6} HP"
-        display_name = f"Pulp Logic 1U {width_value} tile(s)"
+        display_name = f"Pulp Logic 1U {width_value} tile(s){beta_suffix}"
         conformance_note = (
-            "Pulp Logic-style 1U tile with a 43.18 mm row height and 6 HP tile increments."
+            "BETA: Pulp Logic-style 1U tile with a 43.18 mm row height and 6 HP tile increments."
         )
     elif standard_key == STANDARD_KOSMO:
         width_value = kosmo_units
@@ -248,9 +280,9 @@ def build_panel_spec(
         hole_layout_key = "corners"
         width_unit_label = "x 2.5 cm"
         width_display = f"{width_value} x 2.5 cm"
-        display_name = f"Kosmo {width_mm:.0f} mm"
+        display_name = f"Kosmo {width_mm:.0f} mm{beta_suffix}"
         conformance_note = (
-            "Kosmo-style 20 cm panel with 2.5 cm width steps and 3 mm mounting margins."
+            "BETA: Kosmo-style 20 cm panel with 2.5 cm width steps and 3 mm mounting margins."
         )
     else:
         width_value = custom_width_mm
@@ -263,12 +295,14 @@ def build_panel_spec(
         hole_layout_key = custom_layout_key
         width_unit_label = "mm"
         width_display = f"{width_value:.2f} mm"
-        display_name = "Custom panel"
-        conformance_note = "Custom panel geometry."
+        display_name = f"Custom panel{beta_suffix}"
+        conformance_note = "BETA: Custom panel geometry."
+
+    slot_length_mm = effective_slot_length_mm(width_mm, hole_x_margin_mm)
 
     return {
         "standard_key": standard_key,
-        "standard_label": standard_label(standard_key),
+        "standard_label": standard_label(standard_key) + beta_suffix,
         "cutout_type": cutout_type,
         "width_value": width_value,
         "width_unit_label": width_unit_label,
@@ -278,12 +312,15 @@ def build_panel_spec(
         "thickness_mm": thickness_mm,
         "hole_diameter_mm": hole_diameter_mm,
         "slot_height_mm": DEFAULT_SLOT_HEIGHT_MM,
-        "slot_length_mm": DEFAULT_SLOT_LENGTH_MM,
+        "slot_length_mm": slot_length_mm,
         "hole_x_margin_mm": hole_x_margin_mm,
         "hole_y_margin_mm": hole_y_margin_mm,
         "hole_layout_key": hole_layout_key,
         "doepfer_center_single_hole_column": doepfer_center_single_hole_column,
+        "doepfer_narrow_diagonal_key": doepfer_narrow_diagonal_key,
         "doepfer_four_holes_start_hp": FOUR_HOLES_START_HP,
+        "top_clearance_mm": top_clearance_mm,
+        "bottom_clearance_mm": bottom_clearance_mm,
         "display_name": display_name,
         "conformance_note": conformance_note,
     }
@@ -291,6 +328,14 @@ def build_panel_spec(
 
 def eurorack_panel_width(hp):
     return hp * HP_MM - WIDTH_CLEARANCE
+
+
+def ordered_unique(values):
+    unique = []
+    for value in values:
+        if value not in unique:
+            unique.append(value)
+    return unique
 
 
 def mounting_hole_x_positions(width, hp, center_single_hole_column=CENTER_SINGLE_HOLE_COLUMN):
@@ -318,45 +363,96 @@ def mounting_hole_y_positions():
     ]
 
 
-def generic_mounting_hole_x_positions(spec):
+def generic_mounting_points(spec):
     width = spec["width_mm"]
+    height = spec["height_mm"]
     left_edge = -width / 2.0
+    right_edge = width / 2.0
+    bottom_edge = -height / 2.0
+    top_edge = height / 2.0
 
     if spec["hole_layout_key"] == "doepfer":
         width_value = spec["width_value"]
         threshold = spec["doepfer_four_holes_start_hp"]
+        x_left = left_edge + spec["hole_x_margin_mm"]
+        x_right = left_edge + spec["hole_x_margin_mm"] + (width_value - 3) * HP_MM
+        y_bottom = bottom_edge + spec["hole_y_margin_mm"]
+        y_top = top_edge - spec["hole_y_margin_mm"]
 
         if width_value < threshold:
             if spec["doepfer_center_single_hole_column"]:
-                return [0.0]
+                points = [(0.0, y_bottom), (0.0, y_top)]
+            else:
+                if spec.get("doepfer_narrow_diagonal_key") == DOEPFER_NARROW_UPPER_RIGHT_LOWER_LEFT:
+                    points = [(x_right, y_top), (x_left, y_bottom)]
+                else:
+                    points = [(x_left, y_top), (x_right, y_bottom)]
+        else:
+            points = [
+                (x_left, y_bottom),
+                (x_left, y_top),
+                (x_right, y_bottom),
+                (x_right, y_top),
+            ]
 
-            return [left_edge + spec["hole_x_margin_mm"]]
+        if spec["cutout_type"] == "slots":
+            x_min = left_edge + spec["slot_length_mm"] / 2.0
+            x_max = right_edge - spec["slot_length_mm"] / 2.0
+            y_min = bottom_edge + spec["slot_height_mm"] / 2.0
+            y_max = top_edge - spec["slot_height_mm"] / 2.0
 
-        left_x = left_edge + spec["hole_x_margin_mm"]
-        right_x = left_edge + spec["hole_x_margin_mm"] + (width_value - 3) * HP_MM
-        return [left_x, right_x]
+            points = [
+                (
+                    min(max(x, x_min), x_max),
+                    min(max(y, y_min), y_max)
+                )
+                for x, y in points
+            ]
 
-    if spec["hole_layout_key"] == "corners":
-        return [
-            left_edge + spec["hole_x_margin_mm"],
-            width / 2.0 - spec["hole_x_margin_mm"]
+        return points
+
+    x_margin = spec["hole_x_margin_mm"]
+    y_margin = spec["hole_y_margin_mm"]
+
+    if spec["cutout_type"] == "slots":
+        x_margin = max(x_margin, spec["slot_length_mm"] / 2.0)
+        y_margin = max(y_margin, spec["slot_height_mm"] / 2.0)
+
+    left_x = left_edge + x_margin
+    right_x = right_edge - x_margin
+    bottom_y = bottom_edge + y_margin
+    top_y = top_edge - y_margin
+
+    points = [
+        (left_x, bottom_y),
+        (left_x, top_y),
+        (right_x, bottom_y),
+        (right_x, top_y),
+    ]
+
+    if spec["cutout_type"] == "slots":
+        x_min = left_edge + spec["slot_length_mm"] / 2.0
+        x_max = right_edge - spec["slot_length_mm"] / 2.0
+        y_min = bottom_edge + spec["slot_height_mm"] / 2.0
+        y_max = top_edge - spec["slot_height_mm"] / 2.0
+
+        points = [
+            (
+                min(max(x, x_min), x_max),
+                min(max(y, y_min), y_max)
+            )
+            for x, y in points
         ]
 
-    return [
-        left_edge + spec["hole_x_margin_mm"],
-        width / 2.0 - spec["hole_x_margin_mm"]
-    ]
+    return points
+
+
+def generic_mounting_hole_x_positions(spec):
+    return ordered_unique([x for x, _ in generic_mounting_points(spec)])
 
 
 def generic_mounting_hole_y_positions(spec):
-    height = spec["height_mm"]
-    bottom_y = -height / 2.0
-    top_y = height / 2.0
-
-    return [
-        bottom_y + spec["hole_y_margin_mm"],
-        top_y - spec["hole_y_margin_mm"]
-    ]
+    return ordered_unique([y for _, y in generic_mounting_points(spec)])
 
 
 def make_round_hole_cutter(x, y):
@@ -453,9 +549,12 @@ def make_horizontal_slot_cutter_mm(x, y, slot_height_mm, slot_length_mm, panel_t
     return slot
 
 
-def make_mounting_cutter(x, y, cutout_type):
+def make_mounting_cutter(x, y, cutout_type, slot_length_mm=None):
     if cutout_type == "circles":
         return make_round_hole_cutter(x, y)
+
+    if slot_length_mm is not None:
+        return make_horizontal_slot_cutter_mm(x, y, SLOT_HEIGHT, slot_length_mm, PANEL_THICKNESS)
 
     return make_horizontal_slot_cutter(x, y)
 
@@ -478,7 +577,13 @@ def make_mounting_cutter_from_spec(x, y, spec):
     )
 
 
-def make_panel_shape(width, hp, cutout_type, center_single_hole_column=CENTER_SINGLE_HOLE_COLUMN):
+def make_panel_shape(
+    width,
+    hp,
+    cutout_type,
+    center_single_hole_column=CENTER_SINGLE_HOLE_COLUMN,
+    narrow_diagonal_key=DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT,
+):
     panel = Part.makeBox(
         width,
         PANEL_HEIGHT,
@@ -490,10 +595,40 @@ def make_panel_shape(width, hp, cutout_type, center_single_hole_column=CENTER_SI
         )
     )
 
-    for x in mounting_hole_x_positions(width, hp, center_single_hole_column):
-        for y in mounting_hole_y_positions():
-            cutter = make_mounting_cutter(x, y, cutout_type)
-            panel = panel.cut(cutter)
+    if hp < FOUR_HOLES_START_HP:
+        y_positions = mounting_hole_y_positions()
+        if center_single_hole_column:
+            points = [(0.0, y) for y in y_positions]
+        else:
+            left_x = -width / 2.0 + HOLE_X_FIRST
+            right_x = width / 2.0 - HOLE_X_FIRST
+            if narrow_diagonal_key == DOEPFER_NARROW_UPPER_RIGHT_LOWER_LEFT:
+                points = [(right_x, y_positions[1]), (left_x, y_positions[0])]
+            else:
+                points = [(left_x, y_positions[1]), (right_x, y_positions[0])]
+    else:
+        x_positions = mounting_hole_x_positions(width, hp, center_single_hole_column)
+        y_positions = mounting_hole_y_positions()
+        points = [(x, y) for x in x_positions for y in y_positions]
+
+    if cutout_type == "slots":
+        slot_length = effective_slot_length_mm(width, HOLE_X_FIRST)
+        x_min = -width / 2.0 + slot_length / 2.0
+        x_max = width / 2.0 - slot_length / 2.0
+        y_min = -PANEL_HEIGHT / 2.0 + SLOT_HEIGHT / 2.0
+        y_max = PANEL_HEIGHT / 2.0 - SLOT_HEIGHT / 2.0
+
+        points = [
+            (
+                min(max(x, x_min), x_max),
+                min(max(y, y_min), y_max)
+            )
+            for x, y in points
+        ]
+
+    for x, y in points:
+        cutter = make_mounting_cutter(x, y, cutout_type, slot_length if cutout_type == "slots" else None)
+        panel = panel.cut(cutter)
 
     panel = panel.removeSplitter()
     return panel
@@ -511,10 +646,9 @@ def make_panel_shape_from_spec(spec):
         )
     )
 
-    for x in generic_mounting_hole_x_positions(spec):
-        for y in generic_mounting_hole_y_positions(spec):
-            cutter = make_mounting_cutter_from_spec(x, y, spec)
-            panel = panel.cut(cutter)
+    for x, y in generic_mounting_points(spec):
+        cutter = make_mounting_cutter_from_spec(x, y, spec)
+        panel = panel.cut(cutter)
 
     panel = panel.removeSplitter()
     return panel
@@ -560,18 +694,109 @@ def create_body_from_spec(doc, shape, spec):
     return body, source
 
 
-def panel_layout_summary(hp, cutout_type, center_single_hole_column=CENTER_SINGLE_HOLE_COLUMN):
+def create_reference_sketch(body, source, spec):
+    if body is None or source is None:
+        return None
+
+    try:
+        import Sketcher
+    except Exception:
+        return None
+
+    doc = body.Document
+    sketch_name = f"{spec['standard_key']}_{str(spec['width_value']).replace('.', '_')}_Reference"
+
+    try:
+        existing = doc.getObject(sketch_name)
+        if existing is not None:
+            try:
+                body.removeObject(existing)
+            except Exception:
+                pass
+            try:
+                doc.removeObject(existing.Name)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    sketch = body.newObject("Sketcher::SketchObject", sketch_name)
+    try:
+        sketch.MapMode = "FlatFace"
+        sketch.Support = (source, ["Face6"])
+    except Exception:
+        pass
+
+    try:
+        sketch.Placement = App.Placement(
+            App.Vector(0, 0, spec["thickness_mm"]),
+            App.Rotation()
+        )
+    except Exception:
+        pass
+
+    try:
+        sketch.addExternal(source, "Face6")
+    except Exception:
+        pass
+
+    half_width = spec["width_mm"] / 2.0
+    top_y = spec["height_mm"] / 2.0 - spec["top_clearance_mm"]
+    bottom_y = -spec["height_mm"] / 2.0 + spec["bottom_clearance_mm"]
+
+    top_line = Part.LineSegment(
+        App.Vector(-half_width, top_y, 0),
+        App.Vector(half_width, top_y, 0)
+    )
+    bottom_line = Part.LineSegment(
+        App.Vector(-half_width, bottom_y, 0),
+        App.Vector(half_width, bottom_y, 0)
+    )
+
+    top_id = sketch.addGeometry(top_line, True)
+    bottom_id = sketch.addGeometry(bottom_line, True)
+
+    # Keep the sketch flexible for later manual constraints. The geometry is already
+    # positioned from the panel reference, so adding extra dimensions here can easily
+    # over-constrain the sketch in FreeCAD.
+
+    try:
+        sketch.recompute()
+    except Exception:
+        pass
+
+    return sketch
+
+
+def panel_layout_summary(
+    hp,
+    cutout_type,
+    center_single_hole_column=CENTER_SINGLE_HOLE_COLUMN,
+    narrow_diagonal_key=DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT,
+):
     width = eurorack_panel_width(hp)
-    x_positions = mounting_hole_x_positions(width, hp, center_single_hole_column)
     y_positions = mounting_hole_y_positions()
 
     if hp < FOUR_HOLES_START_HP:
         if center_single_hole_column:
             hole_layout = "Single centered mounting column"
         else:
-            hole_layout = "Single left-side mounting column"
+            hole_layout = doepfer_narrow_layout_label(narrow_diagonal_key)
     else:
         hole_layout = "Two mounting columns, four holes"
+
+    if hp < FOUR_HOLES_START_HP and center_single_hole_column:
+        points = [(0.0, y) for y in y_positions]
+    elif hp < FOUR_HOLES_START_HP:
+        left_x = -width / 2.0 + HOLE_X_FIRST
+        right_x = width / 2.0 - HOLE_X_FIRST
+        if narrow_diagonal_key == DOEPFER_NARROW_UPPER_RIGHT_LOWER_LEFT:
+            points = [(right_x, y_positions[1]), (left_x, y_positions[0])]
+        else:
+            points = [(left_x, y_positions[1]), (right_x, y_positions[0])]
+    else:
+        x_positions = mounting_hole_x_positions(width, hp, center_single_hole_column)
+        points = [(x, y) for x in x_positions for y in y_positions]
 
     return (
         f"Width: {hp_to_width_text(hp)}\n"
@@ -579,22 +804,24 @@ def panel_layout_summary(hp, cutout_type, center_single_hole_column=CENTER_SINGL
         f"Thickness: {PANEL_THICKNESS:.2f} mm\n"
         f"Mounting style: {cutout_label(cutout_type)}\n"
         f"Layout: {hole_layout}\n"
-        f"X positions: {format_positions(x_positions)}\n"
-        f"Y positions: {format_positions(y_positions)}\n"
+        f"Mounting points: {format_point_positions(points)}\n"
         "Output: centered PartDesign Body with hidden base shape"
     )
 
 
 def panel_layout_summary_from_spec(spec):
-    x_positions = generic_mounting_hole_x_positions(spec)
-    y_positions = generic_mounting_hole_y_positions(spec)
+    points = generic_mounting_points(spec)
+    x_positions = ordered_unique([x for x, _ in points])
+    y_positions = ordered_unique([y for _, y in points])
 
     if spec["standard_key"] == STANDARD_DOEPFER:
         if spec["width_value"] < spec["doepfer_four_holes_start_hp"]:
             if spec["doepfer_center_single_hole_column"]:
                 hole_layout = "Single centered mounting column"
             else:
-                hole_layout = "Single left-side mounting column"
+                hole_layout = doepfer_narrow_layout_label(
+                    spec.get("doepfer_narrow_diagonal_key", DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT)
+                )
         else:
             hole_layout = "Two mounting columns, four holes"
     elif spec["standard_key"] == STANDARD_INTELLIJEL_1U:
@@ -614,6 +841,9 @@ def panel_layout_summary_from_spec(spec):
         f"Thickness: {format_mm(spec['thickness_mm'])}\n"
         f"Mounting style: {cutout_label(spec['cutout_type'])}\n"
         f"Layout: {hole_layout}\n"
+        f"Top keep-out: {format_mm(spec['top_clearance_mm'])}\n"
+        f"Bottom keep-out: {format_mm(spec['bottom_clearance_mm'])}\n"
+        f"Mounting points: {format_point_positions(points)}\n"
         f"X positions: {format_positions(x_positions)}\n"
         f"Y positions: {format_positions(y_positions)}\n"
         f"Notes: {spec['conformance_note']}"
@@ -685,8 +915,7 @@ class FaceplatePreviewWidget(QtWidgets.QWidget):
         painter.drawRoundedRect(panel_rect, 10, 10)
 
         panel_width = self.spec["width_mm"]
-        x_positions = generic_mounting_hole_x_positions(self.spec)
-        y_positions = generic_mounting_hole_y_positions(self.spec)
+        points = generic_mounting_points(self.spec)
 
         def map_x(value):
             return panel_rect.left() + ((value + panel_width / 2.0) / panel_width) * panel_rect.width()
@@ -703,26 +932,52 @@ class FaceplatePreviewWidget(QtWidgets.QWidget):
 
         if self.spec["cutout_type"] == "circles":
             radius = (self.spec["hole_diameter_mm"] / 2.0) * scale
-            for x in x_positions:
-                for y in y_positions:
-                    cx = map_x(x)
-                    cy = map_y(y)
-                    painter.drawEllipse(QtCore.QPointF(cx, cy), radius, radius)
-                    painter.setBrush(highlight)
-                    painter.drawEllipse(QtCore.QPointF(cx, cy), radius * 0.45, radius * 0.45)
-                    painter.setBrush(hole_fill)
+            for x, y in points:
+                cx = map_x(x)
+                cy = map_y(y)
+                painter.drawEllipse(QtCore.QPointF(cx, cy), radius, radius)
+                painter.setBrush(highlight)
+                painter.drawEllipse(QtCore.QPointF(cx, cy), radius * 0.45, radius * 0.45)
+                painter.setBrush(hole_fill)
         else:
             slot_width = self.spec["slot_length_mm"] * scale
             slot_height = self.spec["slot_height_mm"] * scale
-            for x in x_positions:
-                for y in y_positions:
-                    painter.setBrush(hole_fill)
-                    self._draw_slot(painter, map_x(x), map_y(y), slot_width, slot_height)
-                    painter.setBrush(highlight)
-                    inner_width = max(slot_width * 0.5, slot_height * 0.8)
-                    inner_height = max(slot_height * 0.35, 1.0)
-                    self._draw_slot(painter, map_x(x), map_y(y), inner_width, inner_height)
-                    painter.setBrush(hole_fill)
+            for x, y in points:
+                painter.setBrush(hole_fill)
+                self._draw_slot(painter, map_x(x), map_y(y), slot_width, slot_height)
+                painter.setBrush(highlight)
+                inner_width = max(slot_width * 0.5, slot_height * 0.8)
+                inner_height = max(slot_height * 0.35, 1.0)
+                self._draw_slot(painter, map_x(x), map_y(y), inner_width, inner_height)
+                painter.setBrush(hole_fill)
+
+        top_keepout_y = map_y(self.spec["height_mm"] / 2.0 - self.spec["top_clearance_mm"])
+        bottom_keepout_y = map_y(-self.spec["height_mm"] / 2.0 + self.spec["bottom_clearance_mm"])
+        keepout_pen = QtGui.QPen(QtGui.QColor(255, 196, 112, 190), max(1.2, scale * 0.14), QtCore.Qt.DashLine)
+        keepout_pen.setDashPattern([6.0, 5.0])
+        painter.setPen(keepout_pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawLine(QtCore.QLineF(panel_rect.left(), top_keepout_y, panel_rect.right(), top_keepout_y))
+        painter.drawLine(QtCore.QLineF(panel_rect.left(), bottom_keepout_y, panel_rect.right(), bottom_keepout_y))
+
+        callout_font = QtGui.QFont()
+        callout_font.setPointSizeF(max(8.0, self.font().pointSizeF()))
+        painter.setFont(callout_font)
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 214, 153)))
+        painter.drawText(
+            QtCore.QRectF(panel_rect.left() + 8, top_keepout_y - 18, panel_rect.width() - 16, 14),
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter,
+            f"Top keep-out {self.spec['top_clearance_mm']:.0f} mm"
+        )
+        painter.drawText(
+            QtCore.QRectF(panel_rect.left() + 8, bottom_keepout_y + 4, panel_rect.width() - 16, 14),
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter,
+            f"Bottom keep-out {self.spec['bottom_clearance_mm']:.0f} mm"
+        )
+
+        label_margin = 10.0
+        top_label_y = max(outer.top(), panel_rect.top() - 26.0)
+        bottom_label_y = min(outer.bottom() - 20.0, panel_rect.bottom() + 6.0)
 
         title_font = QtGui.QFont()
         title_font.setPointSizeF(max(10.0, self.font().pointSizeF() + 1.0))
@@ -730,8 +985,8 @@ class FaceplatePreviewWidget(QtWidgets.QWidget):
         painter.setFont(title_font)
         painter.setPen(QtGui.QPen(QtGui.QColor(242, 246, 250)))
         painter.drawText(
-            outer.adjusted(14, 14, -14, -14),
-            QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft,
+            QtCore.QRectF(panel_rect.left() + label_margin, top_label_y, panel_rect.width() * 0.58, 20.0),
+            QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
             f"{self.spec['display_name']}"
         )
 
@@ -740,18 +995,18 @@ class FaceplatePreviewWidget(QtWidgets.QWidget):
         painter.setFont(meta_font)
         painter.setPen(QtGui.QPen(QtGui.QColor(180, 194, 205)))
         painter.drawText(
-            outer.adjusted(14, 14, -14, -14),
-            QtCore.Qt.AlignTop | QtCore.Qt.AlignRight,
+            QtCore.QRectF(panel_rect.left() + panel_rect.width() * 0.58, top_label_y, panel_rect.width() * 0.38, 20.0),
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter,
             f"{panel_width:.2f} mm"
         )
         painter.drawText(
-            outer.adjusted(14, 14, -14, -14),
-            QtCore.Qt.AlignBottom | QtCore.Qt.AlignLeft,
+            QtCore.QRectF(panel_rect.left() + label_margin, bottom_label_y, panel_rect.width() * 0.58, 20.0),
+            QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
             cutout_label(self.spec["cutout_type"])
         )
         painter.drawText(
-            outer.adjusted(14, 14, -14, -14),
-            QtCore.Qt.AlignBottom | QtCore.Qt.AlignRight,
+            QtCore.QRectF(panel_rect.left() + panel_rect.width() * 0.58, bottom_label_y, panel_rect.width() * 0.38, 20.0),
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter,
             f"{self.spec['height_mm']:.2f} mm tall"
         )
 
@@ -759,16 +1014,22 @@ class FaceplatePreviewWidget(QtWidgets.QWidget):
 
 
 ACTIVE_FACEPLATE_TASK_PANEL = None
+ACTIVE_EXPORT_TASK_PANEL = None
 
 
-class FaceplateTaskPanel(QtWidgets.QWidget):
+class FaceplateTaskPanel(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setWindowTitle("Create Eurorack Faceplate")
         self.setMinimumWidth(1080)
         self.setMinimumHeight(760)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
         self.form = self
+        self.created_body = None
+        self.created_source = None
+        self.created_spec = None
 
         self._build_ui()
         self._apply_style()
@@ -780,6 +1041,15 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(14)
+
+        self.tabs = QtWidgets.QTabWidget()
+        root.addWidget(self.tabs, 1)
+
+        panel_tab = QtWidgets.QWidget()
+        panel_root = QtWidgets.QVBoxLayout(panel_tab)
+        panel_root.setContentsMargins(0, 0, 0, 0)
+        panel_root.setSpacing(14)
+        self.tabs.addTab(panel_tab, "Panel")
 
         hero = QtWidgets.QFrame()
         hero.setObjectName("heroPanel")
@@ -812,7 +1082,7 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
         hero_layout.addWidget(icon_label, 0, QtCore.Qt.AlignTop)
         hero_layout.addLayout(title_block, 1)
 
-        root.addWidget(hero)
+        panel_root.addWidget(hero)
 
         content = QtWidgets.QHBoxLayout()
         content.setSpacing(14)
@@ -882,6 +1152,41 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
         presets_layout.addLayout(preset_buttons)
         presets_layout.addWidget(self.preset_status)
 
+        placement_box = QtWidgets.QGroupBox("Placement clearances")
+        placement_layout = QtWidgets.QVBoxLayout(placement_box)
+        placement_layout.setSpacing(10)
+
+        placement_form = QtWidgets.QFormLayout()
+        placement_form.setHorizontalSpacing(12)
+        placement_form.setVerticalSpacing(10)
+
+        self.top_clearance_spin = QtWidgets.QDoubleSpinBox()
+        self.top_clearance_spin.setRange(0.0, 1000.0)
+        self.top_clearance_spin.setDecimals(2)
+        self.top_clearance_spin.setSingleStep(1.0)
+        self.top_clearance_spin.setValue(10.0)
+        self.top_clearance_spin.setSuffix(" mm")
+        self.top_clearance_spin.valueChanged.connect(self.refresh_summary)
+
+        self.bottom_clearance_spin = QtWidgets.QDoubleSpinBox()
+        self.bottom_clearance_spin.setRange(0.0, 1000.0)
+        self.bottom_clearance_spin.setDecimals(2)
+        self.bottom_clearance_spin.setSingleStep(1.0)
+        self.bottom_clearance_spin.setValue(10.0)
+        self.bottom_clearance_spin.setSuffix(" mm")
+        self.bottom_clearance_spin.valueChanged.connect(self.refresh_summary)
+
+        placement_form.addRow("Top keep-out", self.top_clearance_spin)
+        placement_form.addRow("Bottom keep-out", self.bottom_clearance_spin)
+        placement_layout.addLayout(placement_form)
+
+        placement_hint = QtWidgets.QLabel(
+            "The reference sketch is created automatically when you click Create Panel."
+        )
+        placement_hint.setWordWrap(True)
+        placement_hint.setObjectName("helperText")
+        placement_layout.addWidget(placement_hint)
+
         self.page_stack = QtWidgets.QStackedWidget()
         self._build_doepfer_page()
         self._build_intellijel_1u_page()
@@ -891,6 +1196,7 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
 
         left_column.addWidget(standard_box)
         left_column.addWidget(presets_box)
+        left_column.addWidget(placement_box)
         left_column.addWidget(self.page_stack)
 
         summary_box = QtWidgets.QGroupBox("Live summary")
@@ -930,7 +1236,16 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
         content.addLayout(left_column, 1)
         content.addWidget(preview_box, 1)
 
-        root.addLayout(content)
+        panel_root.addLayout(content)
+
+        self.button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        self.button_box.button(QtWidgets.QDialogButtonBox.Ok).setText("Create Panel")
+        self.button_box.button(QtWidgets.QDialogButtonBox.Cancel).setText("Close")
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        panel_root.addWidget(self.button_box)
 
     def _build_doepfer_page(self):
         page = QtWidgets.QWidget()
@@ -946,17 +1261,32 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
         self.doepfer_hp_spin.setSuffix(" HP")
         self.doepfer_hp_spin.valueChanged.connect(self.refresh_summary)
 
-        self.doepfer_center_checkbox = QtWidgets.QCheckBox("Center single mounting column below 12 HP")
+        self.doepfer_thickness_spin = QtWidgets.QDoubleSpinBox()
+        self.doepfer_thickness_spin.setRange(0.5, 20.0)
+        self.doepfer_thickness_spin.setDecimals(2)
+        self.doepfer_thickness_spin.setSingleStep(0.1)
+        self.doepfer_thickness_spin.setSuffix(" mm")
+        self.doepfer_thickness_spin.valueChanged.connect(self.refresh_summary)
+
+        self.doepfer_center_checkbox = QtWidgets.QCheckBox("Use centered single column below 12 HP")
         self.doepfer_center_checkbox.setChecked(CENTER_SINGLE_HOLE_COLUMN)
+        self.doepfer_center_checkbox.stateChanged.connect(self._update_doepfer_narrow_controls)
         self.doepfer_center_checkbox.stateChanged.connect(self.refresh_summary)
 
+        self.doepfer_narrow_combo = QtWidgets.QComboBox()
+        for key, label in DOEPFER_NARROW_DIAGONAL_OPTIONS:
+            self.doepfer_narrow_combo.addItem(label, key)
+        self.doepfer_narrow_combo.currentIndexChanged.connect(self.refresh_summary)
+
         form.addRow("Width", self.doepfer_hp_spin)
+        form.addRow("Thickness", self.doepfer_thickness_spin)
         form.addRow("", self.doepfer_center_checkbox)
+        form.addRow("Narrow layout", self.doepfer_narrow_combo)
 
         layout.addLayout(form)
 
         helper = QtWidgets.QLabel(
-            "Doepfer mode follows the Eurorack 3U panel conventions with HP-based width."
+            "Doepfer mode follows the Eurorack 3U panel conventions with HP-based width, 2 mm default thickness, and a selectable narrow-panel diagonal below 12 HP."
         )
         helper.setWordWrap(True)
         helper.setObjectName("helperText")
@@ -964,6 +1294,9 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
         layout.addStretch(1)
 
         self.page_stack.addWidget(page)
+
+    def _update_doepfer_narrow_controls(self, *args):
+        self.doepfer_narrow_combo.setEnabled(not self.doepfer_center_checkbox.isChecked())
 
     def _build_intellijel_1u_page(self):
         page = QtWidgets.QWidget()
@@ -1205,9 +1538,14 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
     def _apply_standard_defaults(self, standard_key):
         if standard_key == STANDARD_DOEPFER:
             self.doepfer_hp_spin.setValue(8)
+            self.doepfer_thickness_spin.setValue(2.0)
             self.doepfer_center_checkbox.setChecked(CENTER_SINGLE_HOLE_COLUMN)
+            default_orientation = self.doepfer_narrow_combo.findData(DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT)
+            if default_orientation >= 0:
+                self.doepfer_narrow_combo.setCurrentIndex(default_orientation)
+            self._update_doepfer_narrow_controls()
             self.standard_hint.setText(
-                "Doepfer Eurorack mode uses HP units, a 128.5 mm panel height, and the familiar 5.08 mm grid."
+                "Doepfer Eurorack mode uses HP units, a 128.5 mm panel height, and a 2 mm default thickness."
             )
             self.page_stack.setCurrentIndex(0)
         elif standard_key == STANDARD_INTELLIJEL_1U:
@@ -1239,6 +1577,11 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
                 "Custom mode gives exact millimeter control over panel size and mounting geometry."
             )
             self.page_stack.setCurrentIndex(4)
+
+        if hasattr(self, "top_clearance_spin"):
+            self.top_clearance_spin.setValue(10.0)
+        if hasattr(self, "bottom_clearance_spin"):
+            self.bottom_clearance_spin.setValue(10.0)
 
     def _set_standard(self, standard_key):
         index = self.standard_combo.findData(standard_key)
@@ -1379,9 +1722,15 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
 
         if standard_key == STANDARD_DOEPFER:
             self.doepfer_hp_spin.setValue(int(spec.get("width_value", 8)))
+            self.doepfer_thickness_spin.setValue(float(spec.get("thickness_mm", 2.0)))
             self.doepfer_center_checkbox.setChecked(
                 bool(spec.get("doepfer_center_single_hole_column", CENTER_SINGLE_HOLE_COLUMN))
             )
+            narrow_key = spec.get("doepfer_narrow_diagonal_key", DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT)
+            narrow_index = self.doepfer_narrow_combo.findData(narrow_key)
+            if narrow_index >= 0:
+                self.doepfer_narrow_combo.setCurrentIndex(narrow_index)
+            self._update_doepfer_narrow_controls()
         elif standard_key == STANDARD_INTELLIJEL_1U:
             self.intellijel_1u_hp_spin.setValue(int(spec.get("width_value", 10)))
         elif standard_key == STANDARD_PULP_LOGIC_1U:
@@ -1395,6 +1744,11 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
             self.custom_hole_diameter_spin.setValue(float(spec.get("hole_diameter_mm", 3.2)))
             self.custom_x_margin_spin.setValue(float(spec.get("hole_x_margin_mm", 7.5)))
             self.custom_y_margin_spin.setValue(float(spec.get("hole_y_margin_mm", 3.0)))
+
+        if hasattr(self, "top_clearance_spin"):
+            self.top_clearance_spin.setValue(float(spec.get("top_clearance_mm", 10.0)))
+        if hasattr(self, "bottom_clearance_spin"):
+            self.bottom_clearance_spin.setValue(float(spec.get("bottom_clearance_mm", 10.0)))
 
         cutout_type = spec.get("cutout_type", "circles")
         cutout_index = self.cutout_combo.findData(cutout_type)
@@ -1412,28 +1766,38 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
                 standard_key,
                 cutout_type,
                 doepfer_hp=self.doepfer_hp_spin.value(),
-                doepfer_center_single_hole_column=self.doepfer_center_checkbox.isChecked()
+                doepfer_center_single_hole_column=self.doepfer_center_checkbox.isChecked(),
+                doepfer_narrow_diagonal_key=self.doepfer_narrow_combo.currentData(),
+                doepfer_thickness_mm=self.doepfer_thickness_spin.value(),
+                top_clearance_mm=self.top_clearance_spin.value(),
+                bottom_clearance_mm=self.bottom_clearance_spin.value(),
             )
 
         if standard_key == STANDARD_INTELLIJEL_1U:
             return build_panel_spec(
                 standard_key,
                 cutout_type,
-                doepfer_hp=self.intellijel_1u_hp_spin.value()
+                doepfer_hp=self.intellijel_1u_hp_spin.value(),
+                top_clearance_mm=self.top_clearance_spin.value(),
+                bottom_clearance_mm=self.bottom_clearance_spin.value(),
             )
 
         if standard_key == STANDARD_PULP_LOGIC_1U:
             return build_panel_spec(
                 standard_key,
                 cutout_type,
-                doepfer_hp=self.pulplogic_tiles_spin.value()
+                doepfer_hp=self.pulplogic_tiles_spin.value(),
+                top_clearance_mm=self.top_clearance_spin.value(),
+                bottom_clearance_mm=self.bottom_clearance_spin.value(),
             )
 
         if standard_key == STANDARD_KOSMO:
             return build_panel_spec(
                 standard_key,
                 cutout_type,
-                kosmo_units=self.kosmo_units_spin.value()
+                kosmo_units=self.kosmo_units_spin.value(),
+                top_clearance_mm=self.top_clearance_spin.value(),
+                bottom_clearance_mm=self.bottom_clearance_spin.value(),
             )
 
         return build_panel_spec(
@@ -1444,7 +1808,9 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
             custom_thickness_mm=self.custom_thickness_spin.value(),
             custom_hole_diameter_mm=self.custom_hole_diameter_spin.value(),
             custom_hole_x_margin_mm=self.custom_x_margin_spin.value(),
-            custom_hole_y_margin_mm=self.custom_y_margin_spin.value()
+            custom_hole_y_margin_mm=self.custom_y_margin_spin.value(),
+            top_clearance_mm=self.top_clearance_spin.value(),
+            bottom_clearance_mm=self.bottom_clearance_spin.value(),
         )
 
     def selected_parameters(self):
@@ -1460,24 +1826,24 @@ class FaceplateTaskPanel(QtWidgets.QWidget):
 
     def accept(self):
         global ACTIVE_FACEPLATE_TASK_PANEL
-        create_panel_from_spec(self._current_spec())
-        if Gui is not None:
-            try:
-                Gui.Control.closeDialog()
-            except Exception:
-                pass
-        ACTIVE_FACEPLATE_TASK_PANEL = None
+        panel_spec = self._current_spec()
+        self.created_spec = panel_spec
+        self.created_body = create_panel_from_spec(panel_spec)
+        self.created_source = getattr(self.created_body, "BaseFeature", None) if self.created_body is not None else None
+        ACTIVE_FACEPLATE_TASK_PANEL = self
+        self.refresh_summary()
         return True
 
     def reject(self):
         global ACTIVE_FACEPLATE_TASK_PANEL
-        if Gui is not None:
-            try:
-                Gui.Control.closeDialog()
-            except Exception:
-                pass
+        super().reject()
         ACTIVE_FACEPLATE_TASK_PANEL = None
         return True
+
+    def closeEvent(self, event):
+        global ACTIVE_FACEPLATE_TASK_PANEL
+        ACTIVE_FACEPLATE_TASK_PANEL = None
+        super().closeEvent(event)
 
 
 def create_panel_from_spec(spec):
@@ -1489,6 +1855,14 @@ def create_panel_from_spec(spec):
     body, source = create_body_from_spec(doc, shape, spec)
 
     doc.recompute()
+
+    reference_sketch = None
+    if Gui is not None:
+        reference_sketch = create_reference_sketch(body, source, spec)
+        try:
+            doc.recompute()
+        except Exception:
+            pass
 
     if Gui is not None:
         try:
@@ -1508,19 +1882,28 @@ def create_panel_from_spec(spec):
         f"Cutout type: {spec['cutout_type']}\n"
         f"Hole diameter: {spec['hole_diameter_mm']:.2f} mm\n"
         f"Slot size: {spec['slot_length_mm']:.2f} mm x {spec['slot_height_mm']:.2f} mm\n"
-        f"X positions: {generic_mounting_hole_x_positions(spec)}\n"
-        f"Y positions: {generic_mounting_hole_y_positions(spec)}\n\n"
+        f"Top keep-out: {spec['top_clearance_mm']:.2f} mm\n"
+        f"Bottom keep-out: {spec['bottom_clearance_mm']:.2f} mm\n"
+        f"Mounting points: {generic_mounting_points(spec)}\n\n"
     )
 
     return body
 
 
-def create_eurorack_panel(hp, cutout_type, center_single_hole_column=CENTER_SINGLE_HOLE_COLUMN):
+def create_eurorack_panel(
+    hp,
+    cutout_type,
+    center_single_hole_column=CENTER_SINGLE_HOLE_COLUMN,
+    narrow_diagonal_key=DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT,
+    thickness_mm=PANEL_THICKNESS,
+):
     spec = build_panel_spec(
         STANDARD_DOEPFER,
         cutout_type,
         doepfer_hp=hp,
-        doepfer_center_single_hole_column=center_single_hole_column
+        doepfer_center_single_hole_column=center_single_hole_column,
+        doepfer_narrow_diagonal_key=narrow_diagonal_key,
+        doepfer_thickness_mm=thickness_mm,
     )
     return create_panel_from_spec(spec)
 
@@ -1531,11 +1914,1162 @@ def create_single_eurorack_panel():
     if Gui is None:
         return create_panel_from_spec(build_panel_spec(STANDARD_DOEPFER, "circles"))
 
-    ACTIVE_FACEPLATE_TASK_PANEL = FaceplateTaskPanel()
+    if ACTIVE_FACEPLATE_TASK_PANEL is None:
+        ACTIVE_FACEPLATE_TASK_PANEL = FaceplateTaskPanel()
 
     try:
-        Gui.Control.showDialog(ACTIVE_FACEPLATE_TASK_PANEL)
+        ACTIVE_FACEPLATE_TASK_PANEL.show()
+        ACTIVE_FACEPLATE_TASK_PANEL.raise_()
+        ACTIVE_FACEPLATE_TASK_PANEL.activateWindow()
     except Exception:
         return create_panel_from_spec(build_panel_spec(STANDARD_DOEPFER, "circles"))
 
     return ACTIVE_FACEPLATE_TASK_PANEL
+
+
+def _sanitize_file_stem(text):
+    cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in text.strip())
+    cleaned = cleaned.strip("_")
+    return cleaned or "EurorackPanel"
+
+
+def export_selected_object_to_stl(obj=None, filename=None, deflection=0.1):
+    if Gui is None:
+        return False, "GUI is required for STL export."
+
+    if obj is None:
+        selection = Gui.Selection.getSelection()
+        if not selection:
+            return False, "Select a panel body in the model tree first."
+        obj = selection[0]
+
+    shape = getattr(obj, "Shape", None)
+    if shape is None or getattr(shape, "isNull", lambda: True)():
+        return False, "The selected object does not have a valid shape to export."
+
+    if filename is None:
+        try:
+            from PySide6 import QtWidgets
+        except ImportError:
+            try:
+                from PySide2 import QtWidgets
+            except ImportError:
+                from PySide import QtWidgets
+
+        doc = App.ActiveDocument
+        default_dir = ""
+        if doc is not None and getattr(doc, "FileName", ""):
+            default_dir = os.path.dirname(doc.FileName)
+        if not default_dir:
+            default_dir = os.path.expanduser("~")
+
+        suggested = _sanitize_file_stem(getattr(obj, "Label", getattr(obj, "Name", "EurorackPanel"))) + ".stl"
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            None,
+            "Export Selected Panel as STL",
+            os.path.join(default_dir, suggested),
+            "STL Files (*.stl)",
+        )
+        if not filename:
+            return False, "Export cancelled."
+        if not filename.lower().endswith(".stl"):
+            filename += ".stl"
+
+    try:
+        try:
+            obj.Document.recompute()
+        except Exception:
+            pass
+        shape.exportStl(filename, float(deflection))
+    except Exception as exc:
+        return False, f"STL export failed: {exc}"
+
+    return True, filename
+
+
+def _default_export_filename(obj, extension):
+    label = getattr(obj, "Label", getattr(obj, "Name", "EurorackPanel"))
+    return _sanitize_file_stem(label) + extension
+
+
+def _kicad_num(value):
+    text = f"{float(value):.6f}".rstrip("0").rstrip(".")
+    if text in ("-0", "-0.0", ""):
+        return "0"
+    return text
+
+
+def _kicad_point_text(point):
+    return f"{_kicad_num(point.x)} {_kicad_num(point.y)}"
+
+
+def _same_xy(a, b, tolerance=1e-6):
+    return abs(a.x - b.x) <= tolerance and abs(a.y - b.y) <= tolerance
+
+
+def _top_planar_face(shape):
+    faces = list(getattr(shape, "Faces", []) or [])
+    if not faces:
+        return None
+
+    candidates = []
+    for face in faces:
+        try:
+            center = face.CenterOfMass
+            normal = face.normalAt(0.5, 0.5)
+            if abs(abs(normal.z) - 1.0) <= 1e-3:
+                candidates.append((center.z, face))
+        except Exception:
+            continue
+
+    if candidates:
+        return max(candidates, key=lambda item: item[0])[1]
+
+    try:
+        return max(faces, key=lambda face: face.CenterOfMass.z)
+    except Exception:
+        return faces[0]
+
+
+def _edge_points_for_kicad(edge, segments_per_curve=32):
+    curve = getattr(edge, "Curve", None)
+    type_id = getattr(curve, "TypeId", "")
+    try:
+        if "Line" in type_id:
+            vertices = list(getattr(edge, "Vertexes", []) or [])
+            if len(vertices) >= 2:
+                return [vertices[0].Point, vertices[-1].Point]
+    except Exception:
+        pass
+
+    count = max(8, int(segments_per_curve))
+    try:
+        points = edge.discretize(Number=count)
+    except Exception:
+        vertices = list(getattr(edge, "Vertexes", []) or [])
+        points = [vertex.Point for vertex in vertices]
+
+    return list(points or [])
+
+
+def _wire_to_kicad_segments(wire, segments_per_curve=32):
+    points = []
+    for edge in getattr(wire, "Edges", []) or []:
+        edge_points = _edge_points_for_kicad(edge, segments_per_curve)
+        if not edge_points:
+            continue
+
+        if points and _same_xy(points[-1], edge_points[0]):
+            edge_points = edge_points[1:]
+
+        for point in edge_points:
+            if not points or not _same_xy(points[-1], point):
+                points.append(point)
+
+    if len(points) > 1 and not _same_xy(points[0], points[-1]):
+        points.append(points[0])
+
+    segments = []
+    for start, end in zip(points, points[1:]):
+        if not _same_xy(start, end):
+            segments.append((start, end))
+
+    return segments
+
+
+def _shape_to_kicad_edgecuts(shape, segments_per_curve=32):
+    face = _top_planar_face(shape)
+    if face is None:
+        return []
+
+    segments = []
+    for wire in getattr(face, "Wires", []) or []:
+        segments.extend(_wire_to_kicad_segments(wire, segments_per_curve))
+
+    return segments
+
+
+def _kicad_pcb_text(shape, segments_per_curve=32, thickness_mm=1.6):
+    edgecuts = _shape_to_kicad_edgecuts(shape, segments_per_curve)
+    lines = [
+        '(kicad_pcb (version 20211014) (generator "EurorackForge")',
+        f'  (general (thickness {_kicad_num(thickness_mm)}))',
+        '  (paper "A4")',
+        '  (layers',
+        '    (0 "F.Cu" signal)',
+        '    (31 "B.Cu" signal)',
+        '    (44 "Edge.Cuts" user)',
+        '  )',
+    ]
+
+    for start, end in edgecuts:
+        lines.append(
+            f'  (gr_line (start {_kicad_point_text(start)}) (end {_kicad_point_text(end)}) '
+            '(layer "Edge.Cuts") (width 0.1))'
+        )
+
+    lines.append(')')
+    return "\n".join(lines) + "\n"
+
+
+def _kicad_edge_svg_text(shape, segments_per_curve=32):
+    edgecuts = _shape_to_kicad_edgecuts(shape, segments_per_curve)
+    if not edgecuts:
+        return None
+
+    all_points = [point for segment in edgecuts for point in segment]
+    min_x = min(point.x for point in all_points)
+    max_x = max(point.x for point in all_points)
+    min_y = min(point.y for point in all_points)
+    max_y = max(point.y for point in all_points)
+    width = max(1.0, max_x - min_x)
+    height = max(1.0, max_y - min_y)
+    pad = max(width, height) * 0.05
+
+    def svg_x(value):
+        return value - min_x + pad
+
+    def svg_y(value):
+        return (max_y - value) + pad
+
+    svg_width = width + pad * 2.0
+    svg_height = height + pad * 2.0
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
+        '<svg xmlns="http://www.w3.org/2000/svg" version="1.1"',
+        f'     width="{_kicad_num(svg_width)}mm" height="{_kicad_num(svg_height)}mm"',
+        f'     viewBox="0 0 {_kicad_num(svg_width)} {_kicad_num(svg_height)}">',
+        '  <g fill="none" stroke="#000000" stroke-width="0.1" stroke-linecap="round" stroke-linejoin="round">',
+    ]
+
+    for start, end in edgecuts:
+        lines.append(
+            f'    <line x1="{_kicad_num(svg_x(start.x))}" y1="{_kicad_num(svg_y(start.y))}" '
+            f'x2="{_kicad_num(svg_x(end.x))}" y2="{_kicad_num(svg_y(end.y))}" />'
+        )
+
+    lines.extend([
+        '  </g>',
+        '</svg>',
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def _selected_export_target():
+    if Gui is None:
+        return None
+
+    try:
+        selection = Gui.Selection.getSelection()
+    except Exception:
+        selection = []
+
+    if not selection:
+        return None
+
+    obj = selection[0]
+    shape = getattr(obj, "Shape", None)
+    if shape is not None and not getattr(shape, "isNull", lambda: True)():
+        return obj
+
+    base = getattr(obj, "BaseFeature", None)
+    if base is not None:
+        base_shape = getattr(base, "Shape", None)
+        if base_shape is not None and not getattr(base_shape, "isNull", lambda: True)():
+            return base
+
+    return None
+
+
+def export_selected_object_to_svg(obj=None, filename=None):
+    if Gui is None:
+        return False, "GUI is required for SVG export."
+
+    if obj is None:
+        obj = _selected_export_target()
+        if obj is None:
+            return False, "Select a panel body in the model tree first."
+
+    shape = getattr(obj, "Shape", None)
+    if shape is None or getattr(shape, "isNull", lambda: True)():
+        return False, "The selected object does not have a valid shape to export."
+
+    if filename is None:
+        try:
+            from PySide6 import QtWidgets
+        except ImportError:
+            try:
+                from PySide2 import QtWidgets
+            except ImportError:
+                from PySide import QtWidgets
+
+        doc = App.ActiveDocument
+        default_dir = ""
+        if doc is not None and getattr(doc, "FileName", ""):
+            default_dir = os.path.dirname(doc.FileName)
+        if not default_dir:
+            default_dir = os.path.expanduser("~")
+
+        suggested = _default_export_filename(obj, ".svg")
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            None,
+            "Export Selected Panel as SVG",
+            os.path.join(default_dir, suggested),
+            "SVG Files (*.svg)",
+        )
+        if not filename:
+            return False, "Export cancelled."
+        if not filename.lower().endswith(".svg"):
+            filename += ".svg"
+
+    doc = obj.Document
+    temp_name = _sanitize_file_stem(getattr(obj, "Name", "EurorackPanel")) + "_SVG"
+    temp_obj = None
+    try:
+        temp_obj = doc.addObject("Part::Feature", temp_name)
+        temp_obj.Shape = shape.copy() if hasattr(shape, "copy") else shape
+        try:
+            doc.recompute()
+        except Exception:
+            pass
+
+        try:
+            import importSVG
+        except Exception:
+            importSVG = None
+
+        if importSVG is not None:
+            try:
+                importSVG.export([temp_obj], filename)
+            except Exception:
+                try:
+                    Gui.export([temp_obj], filename)
+                except Exception:
+                    if Gui.ActiveDocument is not None:
+                        Gui.ActiveDocument.ActiveView.saveVectorGraphic(filename)
+        else:
+            try:
+                Gui.export([temp_obj], filename)
+            except Exception:
+                if Gui.ActiveDocument is not None:
+                    Gui.ActiveDocument.ActiveView.saveVectorGraphic(filename)
+    except Exception as exc:
+        return False, f"SVG export failed: {exc}"
+    finally:
+        try:
+            if temp_obj is not None:
+                doc.removeObject(temp_obj.Name)
+                try:
+                    doc.recompute()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    return True, filename
+
+
+def export_selected_object_to_png(
+    obj=None,
+    filename=None,
+    width=2048,
+    height=2048,
+    fit=True,
+    background_color=(1.0, 1.0, 1.0),
+    panel_color=(0.85, 0.87, 0.90),
+):
+    if Gui is None:
+        return False, "GUI is required for PNG export."
+
+    if obj is None:
+        obj = _selected_export_target()
+        if obj is None:
+            return False, "Select a panel body in the model tree first."
+
+    if filename is None:
+        try:
+            from PySide6 import QtWidgets
+        except ImportError:
+            try:
+                from PySide2 import QtWidgets
+            except ImportError:
+                from PySide import QtWidgets
+
+        doc = App.ActiveDocument
+        default_dir = ""
+        if doc is not None and getattr(doc, "FileName", ""):
+            default_dir = os.path.dirname(doc.FileName)
+        if not default_dir:
+            default_dir = os.path.expanduser("~")
+
+        suggested = _default_export_filename(obj, ".png")
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            None,
+            "Export Selected Panel as PNG",
+            os.path.join(default_dir, suggested),
+            "PNG Files (*.png)",
+        )
+        if not filename:
+            return False, "Export cancelled."
+        if not filename.lower().endswith(".png"):
+            filename += ".png"
+
+    if Gui.ActiveDocument is None:
+        return False, "No active 3D view is available for PNG export."
+
+    view = Gui.ActiveDocument.ActiveView
+    selection_snapshot = []
+    try:
+        selection_snapshot = list(Gui.Selection.getSelection())
+    except Exception:
+        selection_snapshot = []
+
+    view_object = getattr(obj, "ViewObject", None)
+    original_shape_color = None
+    original_diffuse_color = None
+    if view_object is not None:
+        try:
+            original_shape_color = view_object.ShapeColor
+        except Exception:
+            original_shape_color = None
+        try:
+            original_diffuse_color = view_object.DiffuseColor
+        except Exception:
+            original_diffuse_color = None
+
+    try:
+        if fit:
+            try:
+                view.fitAll()
+            except Exception:
+                pass
+
+        try:
+            Gui.Selection.clearSelection()
+        except Exception:
+            pass
+
+        if view_object is not None:
+            try:
+                if isinstance(panel_color, QtGui.QColor):
+                    rgb = (panel_color.redF(), panel_color.greenF(), panel_color.blueF())
+                else:
+                    rgb = tuple(panel_color)
+                view_object.ShapeColor = rgb
+                if original_diffuse_color is not None:
+                    if isinstance(original_diffuse_color, (list, tuple)) and original_diffuse_color:
+                        view_object.DiffuseColor = [rgb for _ in original_diffuse_color]
+            except Exception:
+                pass
+
+        try:
+            import OfflineRenderingUtils
+            scene = view.getSceneGraph()
+            camera = view.getCameraNode()
+            OfflineRenderingUtils.render(
+                filename,
+                scene=scene,
+                camera=camera,
+                zoom=fit,
+                width=int(width),
+                height=int(height),
+                background=background_color,
+            )
+        except Exception:
+            try:
+                bg = QtGui.QColor.fromRgbF(*background_color) if not isinstance(background_color, QtGui.QColor) else background_color
+                view.saveImage(filename, int(width), int(height), bg)
+            except Exception:
+                try:
+                    view.saveImage(filename, int(width), int(height), QtGui.QColor("white"))
+                except Exception:
+                    view.saveImage(filename)
+    except Exception as exc:
+        return False, f"PNG export failed: {exc}"
+    finally:
+        if view_object is not None:
+            try:
+                if original_shape_color is not None:
+                    view_object.ShapeColor = original_shape_color
+            except Exception:
+                pass
+            try:
+                if original_diffuse_color is not None:
+                    view_object.DiffuseColor = original_diffuse_color
+            except Exception:
+                pass
+        try:
+            Gui.Selection.clearSelection()
+            for selected in selection_snapshot:
+                try:
+                    Gui.Selection.addSelection(selected)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    return True, filename
+
+
+def export_selected_object_to_kicad_pcb(obj=None, filename=None, segments_per_curve=32):
+    if obj is None:
+        obj = _selected_export_target()
+        if obj is None:
+            return False, "Select a panel body in the model tree first."
+
+    shape = getattr(obj, "Shape", None)
+    if shape is None or getattr(shape, "isNull", lambda: True)():
+        return False, "The selected object does not have a valid shape to export."
+
+    if filename is None:
+        try:
+            from PySide6 import QtWidgets
+        except ImportError:
+            try:
+                from PySide2 import QtWidgets
+            except ImportError:
+                from PySide import QtWidgets
+
+        doc = App.ActiveDocument
+        default_dir = ""
+        if doc is not None and getattr(doc, "FileName", ""):
+            default_dir = os.path.dirname(doc.FileName)
+        if not default_dir:
+            default_dir = os.path.expanduser("~")
+
+        suggested = _default_export_filename(obj, ".kicad_pcb")
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            None,
+            "Export Selected Panel as KiCad PCB",
+            os.path.join(default_dir, suggested),
+            "KiCad PCB Files (*.kicad_pcb)",
+        )
+        if not filename:
+            return False, "Export cancelled."
+        if not filename.lower().endswith(".kicad_pcb"):
+            filename += ".kicad_pcb"
+
+    try:
+        thickness_mm = 1.6
+        try:
+            thickness_mm = float(getattr(shape.BoundBox, "ZLength", thickness_mm) or thickness_mm)
+        except Exception:
+            pass
+        board_text = _kicad_pcb_text(shape, segments_per_curve=int(segments_per_curve), thickness_mm=thickness_mm)
+        with open(filename, "w", encoding="utf-8") as handle:
+            handle.write(board_text)
+    except Exception as exc:
+        return False, f"KiCad PCB export failed: {exc}"
+
+    return True, filename
+
+
+def export_selected_object_to_kicad_svg(obj=None, filename=None, segments_per_curve=32):
+    if obj is None:
+        obj = _selected_export_target()
+        if obj is None:
+            return False, "Select a panel body in the model tree first."
+
+    shape = getattr(obj, "Shape", None)
+    if shape is None or getattr(shape, "isNull", lambda: True)():
+        return False, "The selected object does not have a valid shape to export."
+
+    if filename is None:
+        try:
+            from PySide6 import QtWidgets
+        except ImportError:
+            try:
+                from PySide2 import QtWidgets
+            except ImportError:
+                from PySide import QtWidgets
+
+        doc = App.ActiveDocument
+        default_dir = ""
+        if doc is not None and getattr(doc, "FileName", ""):
+            default_dir = os.path.dirname(doc.FileName)
+        if not default_dir:
+            default_dir = os.path.expanduser("~")
+
+        suggested = _default_export_filename(obj, ".svg")
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            None,
+            "Export Selected Panel as KiCad Edge SVG",
+            os.path.join(default_dir, suggested),
+            "SVG Files (*.svg)",
+        )
+        if not filename:
+            return False, "Export cancelled."
+        if not filename.lower().endswith(".svg"):
+            filename += ".svg"
+
+    try:
+        svg_text = _kicad_edge_svg_text(shape, segments_per_curve=int(segments_per_curve))
+        if not svg_text:
+            return False, "Could not derive Edge.Cuts geometry from the selected shape."
+        with open(filename, "w", encoding="utf-8") as handle:
+            handle.write(svg_text)
+    except Exception as exc:
+        return False, f"KiCad Edge SVG export failed: {exc}"
+
+    return True, filename
+
+
+class ExportTaskPanel(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setWindowTitle("Export Eurorack Panel")
+        self.setMinimumWidth(980)
+        self.setMinimumHeight(640)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
+        self.form = self
+        self.export_target = None
+
+        self._build_ui()
+        FaceplateTaskPanel._apply_style(self)
+        self.refresh_selection()
+        self._update_format_ui()
+
+    def _build_ui(self):
+        root = QtWidgets.QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(14)
+
+        hero = QtWidgets.QFrame()
+        hero.setObjectName("heroPanel")
+        hero_layout = QtWidgets.QHBoxLayout(hero)
+        hero_layout.setContentsMargins(18, 16, 18, 16)
+        hero_layout.setSpacing(14)
+
+        icon_label = QtWidgets.QLabel()
+        icon_label.setFixedSize(56, 56)
+        icon = QtGui.QIcon(resource_path("EurorackForgeExport.svg"))
+        icon_label.setPixmap(icon.pixmap(48, 48))
+        icon_label.setAlignment(QtCore.Qt.AlignCenter)
+
+        title_block = QtWidgets.QVBoxLayout()
+        title_block.setSpacing(4)
+
+        title = QtWidgets.QLabel("Export Selected Panel")
+        title.setObjectName("heroTitle")
+        subtitle = QtWidgets.QLabel(
+            "Choose STL for the solid body, SVG for vector output, or PNG for a rendered image."
+        )
+        subtitle.setObjectName("heroSubtitle")
+        subtitle.setWordWrap(True)
+
+        title_block.addWidget(title)
+        title_block.addWidget(subtitle)
+        title_block.addStretch(1)
+
+        hero_layout.addWidget(icon_label, 0, QtCore.Qt.AlignTop)
+        hero_layout.addLayout(title_block, 1)
+        root.addWidget(hero)
+
+        content = QtWidgets.QHBoxLayout()
+        content.setSpacing(14)
+
+        left_column = QtWidgets.QVBoxLayout()
+        left_column.setSpacing(14)
+
+        target_box = QtWidgets.QGroupBox("Target")
+        target_layout = QtWidgets.QVBoxLayout(target_box)
+        target_layout.setSpacing(10)
+
+        target_form = QtWidgets.QFormLayout()
+        target_form.setHorizontalSpacing(12)
+        target_form.setVerticalSpacing(10)
+
+        self.target_name = QtWidgets.QLineEdit()
+        self.target_name.setReadOnly(True)
+        self.target_name.setPlaceholderText("Select a panel body in the model tree")
+
+        self.target_type = QtWidgets.QLineEdit()
+        self.target_type.setReadOnly(True)
+        self.target_type.setPlaceholderText("Object type")
+
+        target_form.addRow("Object", self.target_name)
+        target_form.addRow("Type", self.target_type)
+        target_layout.addLayout(target_form)
+
+        target_buttons = QtWidgets.QHBoxLayout()
+        target_buttons.setSpacing(8)
+
+        self.refresh_target_button = QtWidgets.QToolButton()
+        self.refresh_target_button.setText("Use Selected")
+        self.refresh_target_button.clicked.connect(self.refresh_selection)
+
+        target_buttons.addWidget(self.refresh_target_button)
+        target_buttons.addStretch(1)
+        target_layout.addLayout(target_buttons)
+
+        left_column.addWidget(target_box)
+
+        format_box = QtWidgets.QGroupBox("Format")
+        format_layout = QtWidgets.QVBoxLayout(format_box)
+        format_layout.setSpacing(10)
+
+        format_form = QtWidgets.QFormLayout()
+        format_form.setHorizontalSpacing(12)
+        format_form.setVerticalSpacing(10)
+
+        self.format_combo = QtWidgets.QComboBox()
+        self.format_combo.addItem("STL", "stl")
+        self.format_combo.addItem("SVG", "svg")
+        self.format_combo.addItem("PNG", "png")
+        self.format_combo.addItem("KiCad PCB", "kicad")
+        self.format_combo.addItem("KiCad Edge SVG", "kicad_svg")
+        self.format_combo.currentIndexChanged.connect(self._update_format_ui)
+
+        format_form.addRow("Export as", self.format_combo)
+        format_layout.addLayout(format_form)
+
+        self.options_stack = QtWidgets.QStackedWidget()
+        self.options_stack.addWidget(self._build_stl_options())
+        self.options_stack.addWidget(self._build_svg_options())
+        self.options_stack.addWidget(self._build_png_options())
+        self.options_stack.addWidget(self._build_kicad_options())
+        self.options_stack.addWidget(self._build_kicad_svg_options())
+        format_layout.addWidget(self.options_stack)
+
+        left_column.addWidget(format_box)
+
+        output_box = QtWidgets.QGroupBox("Output")
+        output_layout = QtWidgets.QVBoxLayout(output_box)
+        output_layout.setSpacing(10)
+
+        path_row = QtWidgets.QHBoxLayout()
+        path_row.setSpacing(8)
+
+        self.output_path = QtWidgets.QLineEdit()
+        self.output_path.setPlaceholderText("Choose an output file")
+
+        self.browse_button = QtWidgets.QToolButton()
+        self.browse_button.setText("Browse")
+        self.browse_button.clicked.connect(self.choose_output_path)
+
+        path_row.addWidget(self.output_path, 1)
+        path_row.addWidget(self.browse_button, 0)
+        output_layout.addLayout(path_row)
+
+        self.export_status = QtWidgets.QLabel("Select a panel and choose a format.")
+        self.export_status.setWordWrap(True)
+        self.export_status.setObjectName("helperText")
+        output_layout.addWidget(self.export_status)
+
+        left_column.addWidget(output_box)
+
+        left_column.addStretch(1)
+
+        preview_box = QtWidgets.QGroupBox("Notes")
+        preview_layout = QtWidgets.QVBoxLayout(preview_box)
+        preview_layout.setSpacing(10)
+
+        self.notes = QtWidgets.QPlainTextEdit()
+        self.notes.setReadOnly(True)
+        self.notes.setLineWrapMode(QtWidgets.QPlainTextEdit.WidgetWidth)
+        self.notes.setMinimumHeight(220)
+        self.notes.setFont(QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont))
+        preview_layout.addWidget(self.notes)
+
+        content.addLayout(left_column, 1)
+        content.addWidget(preview_box, 1)
+        root.addLayout(content)
+
+        self.button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        self.button_box.button(QtWidgets.QDialogButtonBox.Ok).setText("Export")
+        self.button_box.button(QtWidgets.QDialogButtonBox.Cancel).setText("Close")
+        self.button_box.accepted.connect(self.export_selected)
+        self.button_box.rejected.connect(self.reject)
+        root.addWidget(self.button_box)
+
+    def _build_stl_options(self):
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QFormLayout()
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(10)
+
+        self.stl_deflection_spin = QtWidgets.QDoubleSpinBox()
+        self.stl_deflection_spin.setRange(0.001, 5.0)
+        self.stl_deflection_spin.setDecimals(3)
+        self.stl_deflection_spin.setSingleStep(0.01)
+        self.stl_deflection_spin.setValue(0.10)
+        self.stl_deflection_spin.setSuffix(" mm")
+
+        form.addRow("Deflection", self.stl_deflection_spin)
+        layout.addLayout(form)
+
+        note = QtWidgets.QLabel("STL uses the selected object's solid shape.")
+        note.setWordWrap(True)
+        note.setObjectName("helperText")
+        layout.addWidget(note)
+        layout.addStretch(1)
+
+        return page
+
+    def _build_svg_options(self):
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        note = QtWidgets.QLabel(
+            "SVG exports the selected shape as vector geometry. It creates a temporary Part feature from the panel shape so the result stays clean."
+        )
+        note.setWordWrap(True)
+        note.setObjectName("helperText")
+        layout.addWidget(note)
+        layout.addStretch(1)
+
+        return page
+
+    def _build_png_options(self):
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QFormLayout()
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(10)
+
+        self.png_width_spin = QtWidgets.QSpinBox()
+        self.png_width_spin.setRange(64, 8192)
+        self.png_width_spin.setSingleStep(64)
+        self.png_width_spin.setValue(2048)
+        self.png_width_spin.setSuffix(" px")
+
+        self.png_height_spin = QtWidgets.QSpinBox()
+        self.png_height_spin.setRange(64, 8192)
+        self.png_height_spin.setSingleStep(64)
+        self.png_height_spin.setValue(2048)
+        self.png_height_spin.setSuffix(" px")
+
+        self.png_fit_checkbox = QtWidgets.QCheckBox("Fit selected panel before rendering")
+        self.png_fit_checkbox.setChecked(True)
+
+        self.png_panel_color_button = QtWidgets.QPushButton("Choose...")
+        self.png_panel_color_button.clicked.connect(self.choose_png_panel_color)
+        self.png_panel_color_preview = QtWidgets.QLabel()
+        self.png_panel_color_preview.setFixedSize(28, 18)
+        self.png_panel_color_preview.setObjectName("colorSwatch")
+        self.png_panel_color = QtGui.QColor("#d9dde4")
+        self._sync_png_color_preview(self.png_panel_color_preview, self.png_panel_color)
+
+        self.png_background_button = QtWidgets.QPushButton("Choose...")
+        self.png_background_button.clicked.connect(self.choose_png_background_color)
+        self.png_background_preview = QtWidgets.QLabel()
+        self.png_background_preview.setFixedSize(28, 18)
+        self.png_background_preview.setObjectName("colorSwatch")
+        self.png_background_color = QtGui.QColor("#ffffff")
+        self._sync_png_color_preview(self.png_background_preview, self.png_background_color)
+
+        form.addRow("Width", self.png_width_spin)
+        form.addRow("Height", self.png_height_spin)
+        form.addRow("Panel color", self._color_row(self.png_panel_color_preview, self.png_panel_color_button))
+        form.addRow("Background", self._color_row(self.png_background_preview, self.png_background_button))
+        layout.addLayout(form)
+        layout.addWidget(self.png_fit_checkbox)
+
+        note = QtWidgets.QLabel(
+            "PNG is rendered from the current 3D view. Panel and background colors can be changed here."
+        )
+        note.setWordWrap(True)
+        note.setObjectName("helperText")
+        layout.addWidget(note)
+        layout.addStretch(1)
+
+        return page
+
+    def _build_kicad_options(self):
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QFormLayout()
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(10)
+
+        self.kicad_segments_spin = QtWidgets.QSpinBox()
+        self.kicad_segments_spin.setRange(8, 256)
+        self.kicad_segments_spin.setSingleStep(4)
+        self.kicad_segments_spin.setValue(32)
+
+        form.addRow("Curve segments", self.kicad_segments_spin)
+        layout.addLayout(form)
+
+        note = QtWidgets.QLabel(
+            "KiCad PCB exports the panel as Edge.Cuts geometry in a minimal .kicad_pcb file."
+        )
+        note.setWordWrap(True)
+        note.setObjectName("helperText")
+        layout.addWidget(note)
+        layout.addStretch(1)
+
+        return page
+
+    def _build_kicad_svg_options(self):
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QFormLayout()
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(10)
+
+        self.kicad_svg_segments_spin = QtWidgets.QSpinBox()
+        self.kicad_svg_segments_spin.setRange(8, 256)
+        self.kicad_svg_segments_spin.setSingleStep(4)
+        self.kicad_svg_segments_spin.setValue(32)
+
+        form.addRow("Curve segments", self.kicad_svg_segments_spin)
+        layout.addLayout(form)
+
+        note = QtWidgets.QLabel(
+            "KiCad Edge SVG exports the panel outline and cutouts as a simple SVG suitable for Edge.Cuts workflows."
+        )
+        note.setWordWrap(True)
+        note.setObjectName("helperText")
+        layout.addWidget(note)
+        layout.addStretch(1)
+
+        return page
+
+    def _color_row(self, preview, button):
+        row = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        layout.addWidget(preview, 0)
+        layout.addWidget(button, 0)
+        layout.addStretch(1)
+        return row
+
+    def _sync_png_color_preview(self, preview, color):
+        preview.setStyleSheet(
+            "QLabel#colorSwatch {"
+            f"background-color: {color.name()};"
+            "border: 1px solid rgba(90, 100, 115, 180);"
+            "border-radius: 4px;"
+            "}"
+        )
+
+    def choose_png_panel_color(self):
+        color = QtWidgets.QColorDialog.getColor(self.png_panel_color, self, "Choose PNG Panel Color")
+        if color.isValid():
+            self.png_panel_color = color
+            self._sync_png_color_preview(self.png_panel_color_preview, color)
+
+    def choose_png_background_color(self):
+        color = QtWidgets.QColorDialog.getColor(self.png_background_color, self, "Choose PNG Background Color")
+        if color.isValid():
+            self.png_background_color = color
+            self._sync_png_color_preview(self.png_background_preview, color)
+
+    def _selected_object_name(self):
+        return getattr(self.export_target, "Label", getattr(self.export_target, "Name", "No selection")) if self.export_target else "No selection"
+
+    def _selected_object_type(self):
+        return getattr(self.export_target, "TypeId", "") if self.export_target else ""
+
+    def _current_format(self):
+        return self.format_combo.currentData()
+
+    def _current_extension(self):
+        return {
+            "stl": ".stl",
+            "svg": ".svg",
+            "png": ".png",
+            "kicad": ".kicad_pcb",
+            "kicad_svg": ".svg",
+        }.get(self._current_format(), ".stl")
+
+    def _update_notes(self):
+        fmt = self._current_format()
+        notes = [
+            "Select a panel body in the tree or model view, then export.",
+            f"Current target: {self._selected_object_name()}",
+        ]
+        if fmt == "stl":
+            notes.append("STL exports the solid shape.")
+        elif fmt == "svg":
+            notes.append("SVG exports vector geometry from the selected shape.")
+        elif fmt == "png":
+            notes.append("PNG captures the active 3D view.")
+        elif fmt == "kicad_svg":
+            notes.append("KiCad Edge SVG exports the panel outline as SVG for Edge.Cuts workflows.")
+        else:
+            notes.append("KiCad PCB exports Edge.Cuts geometry as a board file.")
+
+        self.notes.setPlainText("\n".join(notes))
+
+    def _update_format_ui(self, *args):
+        self.options_stack.setCurrentIndex({"stl": 0, "svg": 1, "png": 2, "kicad": 3, "kicad_svg": 4}.get(self._current_format(), 0))
+        self._update_output_path()
+        self._update_notes()
+
+    def _update_output_path(self):
+        obj = self.export_target
+        if obj is None:
+            return
+
+        current = self.output_path.text().strip()
+        if current:
+            stem, _ = os.path.splitext(current)
+            if stem:
+                self.output_path.setText(stem + self._current_extension())
+                return
+
+        doc = App.ActiveDocument
+        default_dir = ""
+        if doc is not None and getattr(doc, "FileName", ""):
+            default_dir = os.path.dirname(doc.FileName)
+        if not default_dir:
+            default_dir = os.path.expanduser("~")
+
+        self.output_path.setText(os.path.join(default_dir, _default_export_filename(obj, self._current_extension())))
+
+    def refresh_selection(self):
+        self.export_target = _selected_export_target()
+        self.target_name.setText(self._selected_object_name())
+        self.target_type.setText(self._selected_object_type())
+
+        if self.export_target is None:
+            self.export_status.setText("Select a panel body in the tree or model view.")
+        else:
+            self.export_status.setText(f"Ready to export {self._selected_object_name()}.")
+            self._update_output_path()
+
+        self._update_notes()
+
+    def choose_output_path(self):
+        obj = self.export_target
+        if obj is None:
+            self.refresh_selection()
+            obj = self.export_target
+        if obj is None:
+            self.export_status.setText("Select a panel first.")
+            return
+
+        doc = App.ActiveDocument
+        default_dir = ""
+        if doc is not None and getattr(doc, "FileName", ""):
+            default_dir = os.path.dirname(doc.FileName)
+        if not default_dir:
+            default_dir = os.path.expanduser("~")
+
+        current = self.output_path.text().strip()
+        if not current:
+            current = os.path.join(default_dir, _default_export_filename(obj, self._current_extension()))
+
+        fmt = self._current_format()
+        filters = {
+            "stl": "STL Files (*.stl)",
+            "svg": "SVG Files (*.svg)",
+            "png": "PNG Files (*.png)",
+            "kicad": "KiCad PCB Files (*.kicad_pcb)",
+            "kicad_svg": "SVG Files (*.svg)",
+        }
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Choose Export File",
+            current,
+            filters.get(fmt, "All Files (*)"),
+        )
+        if not filename:
+            return
+        if not filename.lower().endswith(self._current_extension()):
+            filename += self._current_extension()
+        self.output_path.setText(filename)
+
+    def export_selected(self):
+        self.refresh_selection()
+        obj = self.export_target
+        if obj is None:
+            self.export_status.setText("Select a panel body before exporting.")
+            return
+
+        filename = self.output_path.text().strip()
+        if not filename:
+            self.choose_output_path()
+            filename = self.output_path.text().strip()
+        if not filename:
+            self.export_status.setText("Export cancelled.")
+            return
+
+        fmt = self._current_format()
+        if fmt == "stl":
+            ok, result = export_selected_object_to_stl(obj=obj, filename=filename, deflection=self.stl_deflection_spin.value())
+        elif fmt == "svg":
+            ok, result = export_selected_object_to_svg(obj=obj, filename=filename)
+        elif fmt == "png":
+            ok, result = export_selected_object_to_png(
+                obj=obj,
+                filename=filename,
+                width=self.png_width_spin.value(),
+                height=self.png_height_spin.value(),
+                fit=self.png_fit_checkbox.isChecked(),
+                background_color=self.png_background_color,
+                panel_color=self.png_panel_color,
+            )
+        elif fmt == "kicad_svg":
+            ok, result = export_selected_object_to_kicad_svg(
+                obj=obj,
+                filename=filename,
+                segments_per_curve=self.kicad_svg_segments_spin.value(),
+            )
+        else:
+            ok, result = export_selected_object_to_kicad_pcb(
+                obj=obj,
+                filename=filename,
+                segments_per_curve=self.kicad_segments_spin.value(),
+            )
+
+        if ok:
+            self.export_status.setText(f"Exported {os.path.basename(result)}.")
+            try:
+                App.Console.PrintMessage(f"\nExported panel: {result}\n")
+            except Exception:
+                pass
+        else:
+            self.export_status.setText(result)
+
+    def reject(self):
+        global ACTIVE_EXPORT_TASK_PANEL
+        super().reject()
+        ACTIVE_EXPORT_TASK_PANEL = None
+        return True
+
+    def closeEvent(self, event):
+        global ACTIVE_EXPORT_TASK_PANEL
+        ACTIVE_EXPORT_TASK_PANEL = None
+        super().closeEvent(event)
+
+
+def open_export_dialog():
+    global ACTIVE_EXPORT_TASK_PANEL
+
+    if Gui is None:
+        return None
+
+    if ACTIVE_EXPORT_TASK_PANEL is None:
+        ACTIVE_EXPORT_TASK_PANEL = ExportTaskPanel()
+
+    try:
+        ACTIVE_EXPORT_TASK_PANEL.show()
+        ACTIVE_EXPORT_TASK_PANEL.raise_()
+        ACTIVE_EXPORT_TASK_PANEL.activateWindow()
+    except Exception:
+        return ACTIVE_EXPORT_TASK_PANEL
+
+    return ACTIVE_EXPORT_TASK_PANEL
