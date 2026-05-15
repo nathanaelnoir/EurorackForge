@@ -73,6 +73,10 @@ DEFAULT_SLOT_HEIGHT_MM = SLOT_HEIGHT
 DEFAULT_SLOT_LENGTH_MM = SLOT_LENGTH
 PRESET_STORE_VERSION = 1
 PRESET_STORE_FILENAME = "presets.json"
+PCB_HEIGHT_MM = 100.0
+PCB_CLEARANCE_MM = 1.0
+PCB_THICKNESS_MM = 1.6
+PCB_BACK_OFFSET_MM = 0.8
 
 
 def resource_path(filename):
@@ -656,6 +660,36 @@ def make_panel_shape_from_spec(spec):
     return panel
 
 
+def pcb_outline_dimensions_from_spec(spec):
+    if spec["standard_key"] == STANDARD_PULP_LOGIC_1U:
+        width_mm = (spec["width_value"] * 6 * HP_MM) - PCB_CLEARANCE_MM
+    elif spec["standard_key"] in (STANDARD_DOEPFER, STANDARD_INTELLIJEL_1U):
+        width_mm = (spec["width_value"] * HP_MM) - PCB_CLEARANCE_MM
+    else:
+        width_mm = spec["width_mm"] - PCB_CLEARANCE_MM
+
+    width_mm = max(1.0, width_mm)
+    return width_mm, PCB_HEIGHT_MM, PCB_THICKNESS_MM
+
+
+def make_pcb_shape_from_spec(spec):
+    pcb_width_mm, pcb_height_mm, pcb_thickness_mm = pcb_outline_dimensions_from_spec(spec)
+    points = [
+        App.Vector(-pcb_width_mm / 2.0, -pcb_height_mm / 2.0, 0),
+        App.Vector(pcb_width_mm / 2.0, -pcb_height_mm / 2.0, 0),
+        App.Vector(pcb_width_mm / 2.0, pcb_height_mm / 2.0, 0),
+        App.Vector(-pcb_width_mm / 2.0, pcb_height_mm / 2.0, 0),
+        App.Vector(-pcb_width_mm / 2.0, -pcb_height_mm / 2.0, 0),
+    ]
+    wire = Part.makePolygon(points)
+    face = Part.Face(wire)
+    face.Placement = App.Placement(
+        App.Vector(0, 0, spec["thickness_mm"] + PCB_BACK_OFFSET_MM),
+        App.Rotation()
+    )
+    return face
+
+
 def create_body_from_shape(doc, shape, hp, cutout_type):
     clean_name = f"Eurorack_{hp}HP_{cutout_type}"
 
@@ -719,6 +753,43 @@ def create_body_from_spec(doc, shape, spec):
         pass
 
     return body, source
+
+
+def create_pcb_from_spec(doc, spec):
+    pcb_shape = make_pcb_shape_from_spec(spec)
+
+    pcb_name = f"{spec['standard_key']}_{str(spec['width_value']).replace('.', '_')}_{spec['cutout_type']}_PCB"
+    pcb = doc.addObject("Part::Feature", pcb_name)
+    pcb.Label = f"{spec['display_name']} PCB"
+    pcb.Shape = pcb_shape
+
+    try:
+        pcb.addProperty("App::PropertyString", "EurorackForgeSpecJSON", "EurorackForge", "Stored PCB specification for export helpers.")
+    except Exception:
+        pass
+
+    try:
+        pcb.addProperty("App::PropertyString", "EurorackForgeRole", "EurorackForge", "Geometry role used by export helpers.")
+    except Exception:
+        pass
+
+    try:
+        pcb.addProperty("App::PropertyString", "EurorackForgePCBOf", "EurorackForge", "Name of the faceplate body this PCB belongs to.")
+    except Exception:
+        pass
+
+    try:
+        pcb.EurorackForgeSpecJSON = json.dumps(spec)
+    except Exception:
+        pass
+
+    try:
+        pcb.ViewObject.ShapeColor = (0.20, 0.62, 0.48)
+        pcb.ViewObject.Transparency = 72
+    except Exception:
+        pass
+
+    return pcb
 
 
 def create_reference_sketch(body, source, spec):
@@ -840,6 +911,7 @@ def panel_layout_summary_from_spec(spec):
     points = generic_mounting_points(spec)
     x_positions = ordered_unique([x for x, _ in points])
     y_positions = ordered_unique([y for _, y in points])
+    pcb_width_mm, pcb_height_mm, pcb_thickness_mm = pcb_outline_dimensions_from_spec(spec)
 
     if spec["standard_key"] == STANDARD_DOEPFER:
         if spec["width_value"] < spec["doepfer_four_holes_start_hp"]:
@@ -870,6 +942,7 @@ def panel_layout_summary_from_spec(spec):
         f"Layout: {hole_layout}\n"
         f"Top keep-out: {format_mm(spec['top_clearance_mm'])}\n"
         f"Bottom keep-out: {format_mm(spec['bottom_clearance_mm'])}\n"
+        f"PCB outline: {pcb_width_mm:.2f} x {pcb_height_mm:.2f} x {pcb_thickness_mm:.2f} mm\n"
         f"Mounting points: {format_point_positions(points)}\n"
         f"X positions: {format_positions(x_positions)}\n"
         f"Y positions: {format_positions(y_positions)}\n"
@@ -881,20 +954,22 @@ class FaceplatePreviewWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.spec = build_panel_spec(STANDARD_DOEPFER, "circles")
-        self.setMinimumHeight(320)
-        self.setMinimumWidth(360)
+        self.show_pcb = False
+        self.setMinimumHeight(220)
+        self.setMinimumWidth(260)
 
-    def setParameters(self, spec):
+    def setParameters(self, spec, show_pcb=False):
         self.spec = spec
+        self.show_pcb = bool(show_pcb)
         self.update()
 
     def sizeHint(self):
-        return QtCore.QSize(420, 360)
+        return QtCore.QSize(360, 300)
 
     def _panel_rect(self, bounds):
         panel_width = self.spec["width_mm"]
         panel_height = self.spec["height_mm"]
-        margin = 24.0
+        margin = 18.0
 
         available_width = max(1.0, bounds.width() - margin * 2.0)
         available_height = max(1.0, bounds.height() - margin * 2.0)
@@ -906,6 +981,14 @@ class FaceplatePreviewWidget(QtWidgets.QWidget):
         x = bounds.center().x() - scaled_width / 2.0
         y = bounds.center().y() - scaled_height / 2.0
         return QtCore.QRectF(x, y, scaled_width, scaled_height), scale
+
+    def _pcb_rect(self, panel_rect, scale):
+        pcb_width_mm, pcb_height_mm, _ = pcb_outline_dimensions_from_spec(self.spec)
+        scaled_width = pcb_width_mm * scale
+        scaled_height = pcb_height_mm * scale
+        x = panel_rect.center().x() - scaled_width / 2.0
+        y = panel_rect.center().y() - scaled_height / 2.0
+        return QtCore.QRectF(x, y, scaled_width, scaled_height)
 
     def _draw_slot(self, painter, center_x, center_y, slot_width, slot_height):
         radius = slot_height / 2.0
@@ -929,10 +1012,27 @@ class FaceplatePreviewWidget(QtWidgets.QWidget):
 
         outer = bounds.adjusted(8, 8, -8, -8)
         panel_rect, scale = self._panel_rect(outer)
+        if self.show_pcb:
+            pcb_rect = self._pcb_rect(panel_rect, scale)
 
-        panel_shadow = panel_rect.translated(3, 5)
-        painter.setBrush(QtGui.QColor(0, 0, 0, 70))
-        painter.drawRoundedRect(panel_shadow, 10, 10)
+            pcb_shadow = pcb_rect.translated(3, 5)
+            painter.setBrush(QtGui.QColor(0, 0, 0, 55))
+            painter.drawRoundedRect(pcb_shadow, 8, 8)
+
+            painter.setBrush(QtGui.QColor(46, 112, 86, 120))
+            painter.setPen(QtGui.QPen(QtGui.QColor(118, 198, 160, 160), 1.0))
+            painter.drawRoundedRect(pcb_rect, 8, 8)
+
+            pcb_label_font = QtGui.QFont()
+            pcb_label_font.setPointSizeF(max(8.0, self.font().pointSizeF()))
+            pcb_label_font.setBold(True)
+            painter.setFont(pcb_label_font)
+            painter.setPen(QtGui.QPen(QtGui.QColor(205, 241, 224)))
+            painter.drawText(
+                pcb_rect.adjusted(8, 8, -8, -8),
+                QtCore.Qt.AlignCenter,
+                f"PCB {pcb_rect.width() / scale:.0f} x {pcb_rect.height() / scale:.0f} mm"
+            )
 
         panel_gradient = QtGui.QLinearGradient(panel_rect.topLeft(), panel_rect.bottomRight())
         panel_gradient.setColorAt(0.0, QtGui.QColor(48, 62, 76))
@@ -978,8 +1078,10 @@ class FaceplatePreviewWidget(QtWidgets.QWidget):
                 self._draw_slot(painter, map_x(x), map_y(y), inner_width, inner_height)
                 painter.setBrush(hole_fill)
 
-        top_keepout_y = map_y(self.spec["height_mm"] / 2.0 - self.spec["top_clearance_mm"])
-        bottom_keepout_y = map_y(-self.spec["height_mm"] / 2.0 + self.spec["bottom_clearance_mm"])
+        display_top_clearance = self.spec["bottom_clearance_mm"]
+        display_bottom_clearance = self.spec["top_clearance_mm"]
+        top_keepout_y = map_y(self.spec["height_mm"] / 2.0 - display_top_clearance)
+        bottom_keepout_y = map_y(-self.spec["height_mm"] / 2.0 + display_bottom_clearance)
         keepout_pen = QtGui.QPen(QtGui.QColor(255, 196, 112, 190), max(1.2, scale * 0.14), QtCore.Qt.DashLine)
         keepout_pen.setDashPattern([6.0, 5.0])
         painter.setPen(keepout_pen)
@@ -994,12 +1096,12 @@ class FaceplatePreviewWidget(QtWidgets.QWidget):
         painter.drawText(
             QtCore.QRectF(panel_rect.left() + 8, top_keepout_y - 18, panel_rect.width() - 16, 14),
             QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter,
-            f"Top keep-out {self.spec['top_clearance_mm']:.0f} mm"
+            f"Top keep-out {display_top_clearance:.0f} mm"
         )
         painter.drawText(
             QtCore.QRectF(panel_rect.left() + 8, bottom_keepout_y + 4, panel_rect.width() - 16, 14),
             QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter,
-            f"Bottom keep-out {self.spec['bottom_clearance_mm']:.0f} mm"
+            f"Bottom keep-out {display_bottom_clearance:.0f} mm"
         )
 
         label_margin = 10.0
@@ -1049,8 +1151,8 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         super().__init__(parent)
 
         self.setWindowTitle("Create Eurorack Faceplate")
-        self.setMinimumWidth(1080)
-        self.setMinimumHeight(760)
+        self.setMinimumWidth(720)
+        self.setMinimumHeight(480)
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
         self.form = self
@@ -1063,14 +1165,28 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         self._apply_standard_defaults(STANDARD_DOEPFER)
         self.refresh_preset_list()
         self.refresh_summary()
+        self._fit_to_available_screen()
 
     def _build_ui(self):
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(14)
 
+        body_scroll = QtWidgets.QScrollArea()
+        body_scroll.setWidgetResizable(True)
+        body_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        body_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        body_scroll.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        root.addWidget(body_scroll, 1)
+
+        body = QtWidgets.QWidget()
+        body_scroll.setWidget(body)
+        body_layout = QtWidgets.QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(14)
+
         self.tabs = QtWidgets.QTabWidget()
-        root.addWidget(self.tabs, 1)
+        body_layout.addWidget(self.tabs, 1)
 
         panel_tab = QtWidgets.QWidget()
         panel_root = QtWidgets.QVBoxLayout(panel_tab)
@@ -1214,6 +1330,11 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         placement_hint.setObjectName("helperText")
         placement_layout.addWidget(placement_hint)
 
+        self.create_pcb_checkbox = QtWidgets.QCheckBox("Create PCB behind faceplate")
+        self.create_pcb_checkbox.setChecked(False)
+        self.create_pcb_checkbox.stateChanged.connect(self.refresh_summary)
+        placement_layout.addWidget(self.create_pcb_checkbox)
+
         self.page_stack = QtWidgets.QStackedWidget()
         self._build_doepfer_page()
         self._build_intellijel_1u_page()
@@ -1272,7 +1393,34 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         self.button_box.button(QtWidgets.QDialogButtonBox.Cancel).setText("Close")
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
-        panel_root.addWidget(self.button_box)
+        root.addWidget(self.button_box)
+
+    def _fit_to_available_screen(self):
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return
+
+        screen = None
+        if hasattr(self, "windowHandle") and self.windowHandle() is not None:
+            screen = self.windowHandle().screen()
+        if screen is None and hasattr(app, "primaryScreen"):
+            screen = app.primaryScreen()
+        if screen is None:
+            return
+
+        available = screen.availableGeometry()
+        if available.isNull():
+            return
+
+        target_width = min(940, int(available.width() * 0.88))
+        target_height = min(650, int(available.height() * 0.78))
+        target_width = max(self.minimumWidth(), target_width)
+        target_height = max(self.minimumHeight(), target_height)
+        self.resize(target_width, target_height)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QtCore.QTimer.singleShot(0, self._fit_to_available_screen)
 
     def _build_doepfer_page(self):
         page = QtWidgets.QWidget()
@@ -1846,7 +1994,7 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
     def refresh_summary(self, *args):
         spec = self._current_spec()
         self.summary_box.setPlainText(panel_layout_summary_from_spec(spec))
-        self.preview.setParameters(spec)
+        self.preview.setParameters(spec, show_pcb=self.create_pcb_checkbox.isChecked())
 
     def getStandardButtons(self):
         return int(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
@@ -1855,7 +2003,7 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         global ACTIVE_FACEPLATE_TASK_PANEL
         panel_spec = self._current_spec()
         self.created_spec = panel_spec
-        self.created_body = create_panel_from_spec(panel_spec)
+        self.created_body = create_panel_from_spec(panel_spec, create_pcb=self.create_pcb_checkbox.isChecked())
         self.created_source = getattr(self.created_body, "BaseFeature", None) if self.created_body is not None else None
         ACTIVE_FACEPLATE_TASK_PANEL = self
         self.refresh_summary()
@@ -1873,13 +2021,40 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         super().closeEvent(event)
 
 
-def create_panel_from_spec(spec):
+def create_panel_from_spec(spec, create_pcb=False):
     doc = App.ActiveDocument
     if doc is None:
         doc = App.newDocument("Eurorack_Panel")
 
     shape = make_panel_shape_from_spec(spec)
     body, source = create_body_from_spec(doc, shape, spec)
+    pcb = create_pcb_from_spec(doc, spec) if create_pcb else None
+
+    if pcb is not None:
+        try:
+            body.addProperty("App::PropertyString", "EurorackForgePCBObjectName", "EurorackForge", "Name of the matching PCB object.")
+        except Exception:
+            pass
+        try:
+            source.addProperty("App::PropertyString", "EurorackForgePCBObjectName", "EurorackForge", "Name of the matching PCB object.")
+        except Exception:
+            pass
+        try:
+            body.EurorackForgePCBObjectName = pcb.Name
+        except Exception:
+            pass
+        try:
+            source.EurorackForgePCBObjectName = pcb.Name
+        except Exception:
+            pass
+        try:
+            pcb.EurorackForgeRole = "PCB"
+        except Exception:
+            pass
+        try:
+            pcb.EurorackForgePCBOf = body.Name
+        except Exception:
+            pass
 
     doc.recompute()
 
@@ -1899,19 +2074,28 @@ def create_panel_from_spec(spec):
         except Exception:
             pass
 
+    pcb_line = (
+        f"PCB outline: {pcb.Shape.BoundBox.XLength:.2f} mm x {pcb.Shape.BoundBox.YLength:.2f} mm x {pcb.Shape.BoundBox.ZLength:.2f} mm\n"
+        if pcb is not None
+        else "PCB outline: not created\n"
+    )
+
     App.Console.PrintMessage(
-        "\nCreated Eurorack panel\n"
-        f"Standard: {spec['standard_label']}\n"
-        f"Size: {spec['width_display']}\n"
-        f"Width: {spec['width_mm']:.2f} mm\n"
-        f"Height: {spec['height_mm']:.2f} mm\n"
-        f"Thickness: {spec['thickness_mm']:.2f} mm\n"
-        f"Cutout type: {spec['cutout_type']}\n"
-        f"Hole diameter: {spec['hole_diameter_mm']:.2f} mm\n"
-        f"Slot size: {spec['slot_length_mm']:.2f} mm x {spec['slot_height_mm']:.2f} mm\n"
-        f"Top keep-out: {spec['top_clearance_mm']:.2f} mm\n"
-        f"Bottom keep-out: {spec['bottom_clearance_mm']:.2f} mm\n"
-        f"Mounting points: {generic_mounting_points(spec)}\n\n"
+        (
+            "\nCreated Eurorack panel\n"
+            f"Standard: {spec['standard_label']}\n"
+            f"Size: {spec['width_display']}\n"
+            f"Width: {spec['width_mm']:.2f} mm\n"
+            f"Height: {spec['height_mm']:.2f} mm\n"
+            f"Thickness: {spec['thickness_mm']:.2f} mm\n"
+            f"{pcb_line}"
+            f"Cutout type: {spec['cutout_type']}\n"
+            f"Hole diameter: {spec['hole_diameter_mm']:.2f} mm\n"
+            f"Slot size: {spec['slot_length_mm']:.2f} mm x {spec['slot_height_mm']:.2f} mm\n"
+            f"Top keep-out: {spec['top_clearance_mm']:.2f} mm\n"
+            f"Bottom keep-out: {spec['bottom_clearance_mm']:.2f} mm\n"
+            f"Mounting points: {generic_mounting_points(spec)}\n\n"
+        )
     )
 
     return body
@@ -1932,14 +2116,14 @@ def create_eurorack_panel(
         doepfer_narrow_diagonal_key=narrow_diagonal_key,
         doepfer_thickness_mm=thickness_mm,
     )
-    return create_panel_from_spec(spec)
+    return create_panel_from_spec(spec, create_pcb=False)
 
 
 def create_single_eurorack_panel():
     global ACTIVE_FACEPLATE_TASK_PANEL
 
     if Gui is None:
-        return create_panel_from_spec(build_panel_spec(STANDARD_DOEPFER, "circles"))
+        return create_panel_from_spec(build_panel_spec(STANDARD_DOEPFER, "circles"), create_pcb=False)
 
     if ACTIVE_FACEPLATE_TASK_PANEL is None:
         ACTIVE_FACEPLATE_TASK_PANEL = FaceplateTaskPanel()
@@ -1949,7 +2133,7 @@ def create_single_eurorack_panel():
         ACTIVE_FACEPLATE_TASK_PANEL.raise_()
         ACTIVE_FACEPLATE_TASK_PANEL.activateWindow()
     except Exception:
-        return create_panel_from_spec(build_panel_spec(STANDARD_DOEPFER, "circles"))
+        return create_panel_from_spec(build_panel_spec(STANDARD_DOEPFER, "circles"), create_pcb=False)
 
     return ACTIVE_FACEPLATE_TASK_PANEL
 
@@ -1958,6 +2142,97 @@ def _sanitize_file_stem(text):
     cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in text.strip())
     cleaned = cleaned.strip("_")
     return cleaned or "EurorackPanel"
+
+
+def _export_path_conflict(filename):
+    return os.path.exists(filename)
+
+
+def _export_conflict_message(filename):
+    return f"Export target already exists: {filename}"
+
+
+def _pcb_export_filename(filename):
+    stem, ext = os.path.splitext(filename)
+    if not ext:
+        ext = ".dxf"
+    return stem + "_pcb" + ext
+
+
+def _pcb_dxf_text_from_spec(spec):
+    width_mm, height_mm, _ = pcb_outline_dimensions_from_spec(spec)
+    half_width = width_mm / 2.0
+    half_height = height_mm / 2.0
+
+    lines = [
+        "0", "SECTION",
+        "2", "HEADER",
+        "0", "ENDSEC",
+        "0", "SECTION",
+        "2", "TABLES",
+        "0", "ENDSEC",
+        "0", "SECTION",
+        "2", "ENTITIES",
+        "0", "LWPOLYLINE",
+        "8", "0",
+        "90", "4",
+        "70", "1",
+    ]
+
+    points = [
+        (-half_width, -half_height),
+        (half_width, -half_height),
+        (half_width, half_height),
+        (-half_width, half_height),
+    ]
+    for x, y in points:
+        lines.extend([
+            "10", _kicad_num(x),
+            "20", _kicad_num(y),
+        ])
+
+    lines.extend([
+        "0", "ENDSEC",
+        "0", "EOF",
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def _pcb_object_for_export(obj):
+    if obj is None:
+        return None
+
+    doc = obj.Document or App.ActiveDocument
+    if doc is None:
+        return None
+
+    candidate_names = [
+        getattr(obj, "EurorackForgePCBObjectName", ""),
+        getattr(getattr(obj, "BaseFeature", None), "EurorackForgePCBObjectName", ""),
+    ]
+    for candidate_name in candidate_names:
+        if not candidate_name:
+            continue
+        candidate = doc.getObject(candidate_name)
+        if candidate is not None:
+            return candidate
+
+    linked_name = getattr(obj, "Name", "")
+    if linked_name:
+        for candidate in getattr(doc, "Objects", []) or []:
+            if getattr(candidate, "EurorackForgeRole", "") == "PCB" and getattr(candidate, "EurorackForgePCBOf", "") == linked_name:
+                return candidate
+
+    spec = _export_spec_from_obj(obj)
+    if spec is None:
+        return None
+
+    pcb_name = f"{spec['standard_key']}_{str(spec['width_value']).replace('.', '_')}_{spec['cutout_type']}_PCB"
+    candidate = doc.getObject(pcb_name)
+    if candidate is not None:
+        return candidate
+
+    return None
 
 
 def export_selected_object_to_stl(obj=None, filename=None, deflection=0.1):
@@ -2002,6 +2277,10 @@ def export_selected_object_to_stl(obj=None, filename=None, deflection=0.1):
         if not filename.lower().endswith(".stl"):
             filename += ".stl"
 
+    filename = os.path.abspath(os.path.normpath(filename))
+    if _export_path_conflict(filename):
+        return False, _export_conflict_message(filename)
+
     try:
         try:
             obj.Document.recompute()
@@ -2015,7 +2294,7 @@ def export_selected_object_to_stl(obj=None, filename=None, deflection=0.1):
 
 
 def _default_export_filename(obj, extension):
-    label = getattr(obj, "Label", getattr(obj, "Name", "EurorackPanel"))
+    label = getattr(obj, "Name", getattr(obj, "Label", "EurorackPanel"))
     return _sanitize_file_stem(label) + extension
 
 
@@ -2514,6 +2793,9 @@ def _selected_export_target():
         return None
 
     obj = selection[0]
+    if getattr(obj, "TypeId", "") == "PartDesign::Body":
+        return obj
+
     shape = getattr(obj, "Shape", None)
     if shape is not None and not getattr(shape, "isNull", lambda: True)():
         return obj
@@ -2523,6 +2805,85 @@ def _selected_export_target():
         base_shape = getattr(base, "Shape", None)
         if base_shape is not None and not getattr(base_shape, "isNull", lambda: True)():
             return base
+
+    return None
+
+
+def _draft_projection_source(obj):
+    if obj is None:
+        return None
+
+    # If a PartDesign Body is selected, use the final result first.
+    # This is usually the last feature, e.g. Pocket, Pad, Fillet, etc.
+    if getattr(obj, "TypeId", "") == "PartDesign::Body":
+        tip = getattr(obj, "Tip", None)
+        if tip is not None:
+            tip_shape = getattr(tip, "Shape", None)
+            if tip_shape is not None and not getattr(tip_shape, "isNull", lambda: True)():
+                return tip
+
+        shape = getattr(obj, "Shape", None)
+        if shape is not None and not getattr(shape, "isNull", lambda: True)():
+            return obj
+
+        base = getattr(obj, "BaseFeature", None)
+        if base is not None:
+            base_shape = getattr(base, "Shape", None)
+            if base_shape is not None and not getattr(base_shape, "isNull", lambda: True)():
+                return base
+
+    # If a normal feature such as Pocket is selected, use it directly.
+    shape = getattr(obj, "Shape", None)
+    if shape is not None and not getattr(shape, "isNull", lambda: True)():
+        return obj
+
+    tip = getattr(obj, "Tip", None)
+    if tip is not None:
+        tip_shape = getattr(tip, "Shape", None)
+        if tip_shape is not None and not getattr(tip_shape, "isNull", lambda: True)():
+            return tip
+
+    base = getattr(obj, "BaseFeature", None)
+    if base is not None:
+        base_shape = getattr(base, "Shape", None)
+        if base_shape is not None and not getattr(base_shape, "isNull", lambda: True)():
+            return base
+
+    return obj
+
+
+def _containing_body(obj):
+    if obj is None:
+        return None
+
+    if getattr(obj, "TypeId", "") == "PartDesign::Body":
+        return obj
+
+    try:
+        parent = obj.getParentGeoFeatureGroup()
+        if parent is not None and getattr(parent, "TypeId", "") == "PartDesign::Body":
+            return parent
+    except Exception:
+        pass
+
+    for parent in getattr(obj, "InList", []) or []:
+        if getattr(parent, "TypeId", "") == "PartDesign::Body":
+            return parent
+
+    return None
+
+
+def _body_feature_path_name(obj):
+    if obj is None:
+        return None
+
+    name = getattr(obj, "Name", None)
+    if name:
+        return name
+
+    label = getattr(obj, "Label", None)
+    if label:
+        return label
 
     return None
 
@@ -2567,6 +2928,10 @@ def export_selected_object_to_svg(obj=None, filename=None):
             return False, "Export cancelled."
         if not filename.lower().endswith(".svg"):
             filename += ".svg"
+
+    filename = os.path.abspath(os.path.normpath(filename))
+    if _export_path_conflict(filename):
+        return False, _export_conflict_message(filename)
 
     doc = obj.Document
     temp_name = _sanitize_file_stem(getattr(obj, "Name", "EurorackPanel")) + "_SVG"
@@ -2659,6 +3024,10 @@ def export_selected_object_to_png(
             return False, "Export cancelled."
         if not filename.lower().endswith(".png"):
             filename += ".png"
+
+    filename = os.path.abspath(os.path.normpath(filename))
+    if _export_path_conflict(filename):
+        return False, _export_conflict_message(filename)
 
     if Gui.ActiveDocument is None:
         return False, "No active 3D view is available for PNG export."
@@ -2791,6 +3160,10 @@ def export_selected_object_to_kicad_pcb(obj=None, filename=None, segments_per_cu
         if not filename.lower().endswith(".kicad_pcb"):
             filename += ".kicad_pcb"
 
+    filename = os.path.abspath(os.path.normpath(filename))
+    if _export_path_conflict(filename):
+        return False, _export_conflict_message(filename)
+
     try:
         edgecuts = _kicad_edgecuts_from_obj(obj, segments_per_curve=int(segments_per_curve))
         if not edgecuts:
@@ -2847,6 +3220,10 @@ def export_selected_object_to_kicad_svg(obj=None, filename=None, segments_per_cu
         if not filename.lower().endswith(".svg"):
             filename += ".svg"
 
+    filename = os.path.abspath(os.path.normpath(filename))
+    if _export_path_conflict(filename):
+        return False, _export_conflict_message(filename)
+
     try:
         edgecuts = _kicad_edgecuts_from_obj(obj, segments_per_curve=int(segments_per_curve))
         if not edgecuts:
@@ -2856,6 +3233,215 @@ def export_selected_object_to_kicad_svg(obj=None, filename=None, segments_per_cu
             handle.write(svg_text)
     except Exception as exc:
         return False, f"KiCad Edge SVG export failed: {exc}"
+
+    return True, filename
+
+
+def export_selected_object_to_kicad_dxf(obj=None, filename=None):
+    if Gui is None:
+        return False, "GUI is required for KiCad DXF export."
+
+    if obj is None:
+        obj = _selected_export_target()
+        if obj is None:
+            return False, "Select a panel body in the model tree first."
+
+    if filename is None:
+        try:
+            from PySide6 import QtWidgets
+        except ImportError:
+            try:
+                from PySide2 import QtWidgets
+            except ImportError:
+                from PySide import QtWidgets
+
+        doc = App.ActiveDocument
+        default_dir = ""
+        if doc is not None and getattr(doc, "FileName", ""):
+            default_dir = os.path.dirname(doc.FileName)
+        if not default_dir:
+            default_dir = os.path.expanduser("~")
+
+        suggested = _default_export_filename(obj, ".dxf")
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            None,
+            "Export Selected Panel as KiCad DXF",
+            os.path.join(default_dir, suggested),
+            "DXF Files (*.dxf)",
+        )
+        if not filename:
+            return False, "Export cancelled."
+        if not filename.lower().endswith(".dxf"):
+            filename += ".dxf"
+
+    filename = os.path.abspath(os.path.normpath(filename))
+    if _export_path_conflict(filename):
+        return False, _export_conflict_message(filename)
+    output_dir = os.path.dirname(filename)
+    if output_dir:
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception:
+            pass
+
+    doc = obj.Document or App.ActiveDocument
+    if doc is None:
+        return False, "No active document is available for DXF export."
+
+    companion_pcb = _pcb_object_for_export(obj)
+    pcb_filename = _pcb_export_filename(filename) if companion_pcb is not None else None
+    if pcb_filename is not None and _export_path_conflict(pcb_filename):
+        return False, _export_conflict_message(pcb_filename)
+
+    try:
+        try:
+            import Draft
+            import importDXF
+        except Exception as exc:
+            return False, f"Draft DXF export is required for KiCad DXF export: {exc}"
+
+        projection_source = _draft_projection_source(obj)
+        if projection_source is None:
+            return False, "Could not resolve the Draft source selection."
+
+        previous_workbench_name = None
+        try:
+            active_wb = Gui.activeWorkbench()
+            previous_workbench_name = active_wb.name()
+        except Exception:
+            previous_workbench_name = None
+
+        try:
+            App.Console.PrintMessage(
+                "\nKiCad DXF export source: "
+                + getattr(projection_source, "Name", "<none>")
+                + " / "
+                + getattr(projection_source, "TypeId", "<unknown>")
+                + "\n"
+            )
+        except Exception:
+            pass
+
+        try:
+            Gui.activateWorkbench("DraftWorkbench")
+        except Exception:
+            try:
+                Gui.activateWorkbench("Draft")
+            except Exception:
+                pass
+
+        try:
+            temp_view = Draft.make_shape2dview(projection_source, App.Vector(0, 0, 1))
+        except Exception as exc:
+            return False, f"Could not create Draft Shape2DView: {exc}"
+
+        try:
+            doc.recompute()
+        except Exception:
+            pass
+
+        if temp_view is None:
+            return False, "Draft did not create a Shape2DView object."
+
+        try:
+            temp_view.Label = _sanitize_file_stem(getattr(obj, "Label", getattr(obj, "Name", "EurorackPanel"))) + "_2D"
+        except Exception:
+            pass
+
+        try:
+            shape = getattr(temp_view, "Shape", None)
+            if shape is not None:
+                try:
+                    shape_info = (
+                        f"isNull={shape.isNull()} "
+                        f"edges={len(getattr(shape, 'Edges', []) or [])} "
+                        f"wires={len(getattr(shape, 'Wires', []) or [])}"
+                    )
+                except Exception:
+                    shape_info = "unavailable"
+            else:
+                shape_info = "missing"
+
+            try:
+                App.Console.PrintMessage(
+                    "\nKiCad DXF debug:\n"
+                    f"  target file: {filename}\n"
+                    f"  source: {getattr(projection_source, 'Name', '<none>')} / {getattr(projection_source, 'TypeId', '<unknown>')}\n"
+                    f"  temp view: {getattr(temp_view, 'Name', '<none>')} / {getattr(temp_view, 'TypeId', '<unknown>')}\n"
+                    f"  shape: {shape_info}\n"
+                )
+            except Exception:
+                pass
+
+            try:
+                temp_view.ViewObject.Visibility = True
+            except Exception:
+                pass
+
+            try:
+                App.Console.PrintMessage("KiCad DXF debug: running importDXF.export\n")
+            except Exception:
+                pass
+
+            try:
+                importDXF.export([temp_view], filename)
+            except Exception as exc:
+                return False, f"KiCad DXF export failed: {exc}"
+
+            try:
+                App.Console.PrintMessage("KiCad DXF debug: importDXF.export returned\n")
+            except Exception:
+                pass
+
+            if companion_pcb is not None and pcb_filename is not None:
+                pcb_spec = _export_spec_from_obj(companion_pcb) or _export_spec_from_obj(obj)
+                if pcb_spec is None:
+                    return False, "Could not resolve PCB dimensions for DXF export."
+
+                try:
+                    App.Console.PrintMessage(
+                        f"KiCad DXF debug: writing direct PCB DXF to {pcb_filename}\n"
+                    )
+                except Exception:
+                    pass
+
+                try:
+                    pcb_text = _pcb_dxf_text_from_spec(pcb_spec)
+                    with open(pcb_filename, "w", encoding="utf-8") as handle:
+                        handle.write(pcb_text)
+                except Exception as exc:
+                    return False, f"KiCad PCB DXF export failed: {exc}"
+
+                if not os.path.exists(pcb_filename):
+                    return False, "KiCad PCB DXF export did not create a file."
+
+        except Exception as exc:
+            return False, f"KiCad DXF export failed: {exc}"
+
+        try:
+            exists = os.path.exists(filename)
+            size_text = str(os.path.getsize(filename)) if exists else "<missing>"
+            App.Console.PrintMessage(
+                f"KiCad DXF debug: post-export exists={exists} size={size_text}\n"
+            )
+        except Exception:
+            pass
+
+        if not os.path.exists(filename):
+            return False, "KiCad DXF export did not create a file."
+
+    except Exception as exc:
+        return False, f"KiCad DXF export failed: {exc}"
+    finally:
+        try:
+            if previous_workbench_name:
+                Gui.activateWorkbench(previous_workbench_name)
+        except Exception:
+            pass
+        try:
+            doc.recompute()
+        except Exception:
+            pass
 
     return True, filename
 
@@ -2871,6 +3457,7 @@ class ExportTaskPanel(QtWidgets.QDialog):
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
         self.form = self
         self.export_target = None
+        self._export_directory = None
 
         self._build_ui()
         FaceplateTaskPanel._apply_style(self)
@@ -2900,7 +3487,7 @@ class ExportTaskPanel(QtWidgets.QDialog):
         title = QtWidgets.QLabel("Export Selected Panel")
         title.setObjectName("heroTitle")
         subtitle = QtWidgets.QLabel(
-            "Choose STL for the solid body, SVG for vector output, or PNG for a rendered image."
+            "Choose STL for the solid body, SVG for vector output, PNG for a rendered image, or DXF for Draft projection."
         )
         subtitle.setObjectName("heroSubtitle")
         subtitle.setWordWrap(True)
@@ -2937,6 +3524,11 @@ class ExportTaskPanel(QtWidgets.QDialog):
 
         target_form.addRow("Object", self.target_name)
         target_form.addRow("Type", self.target_type)
+
+        self.export_name = QtWidgets.QLineEdit()
+        self.export_name.setPlaceholderText("Export file name")
+        self.export_name.textEdited.connect(self._update_output_path)
+        target_form.addRow("Export name", self.export_name)
         target_layout.addLayout(target_form)
 
         target_buttons = QtWidgets.QHBoxLayout()
@@ -2964,8 +3556,7 @@ class ExportTaskPanel(QtWidgets.QDialog):
         self.format_combo.addItem("STL", "stl")
         self.format_combo.addItem("SVG", "svg")
         self.format_combo.addItem("PNG", "png")
-        self.format_combo.addItem("KiCad PCB", "kicad")
-        self.format_combo.addItem("KiCad Edge SVG", "kicad_svg")
+        self.format_combo.addItem("KiCad DXF", "kicad")
         self.format_combo.currentIndexChanged.connect(self._update_format_ui)
 
         format_form.addRow("Export as", self.format_combo)
@@ -2976,7 +3567,6 @@ class ExportTaskPanel(QtWidgets.QDialog):
         self.options_stack.addWidget(self._build_svg_options())
         self.options_stack.addWidget(self._build_png_options())
         self.options_stack.addWidget(self._build_kicad_options())
-        self.options_stack.addWidget(self._build_kicad_svg_options())
         format_layout.addWidget(self.options_stack)
 
         left_column.addWidget(format_box)
@@ -2989,7 +3579,7 @@ class ExportTaskPanel(QtWidgets.QDialog):
         path_row.setSpacing(8)
 
         self.output_path = QtWidgets.QLineEdit()
-        self.output_path.setPlaceholderText("Choose an output file")
+        self.output_path.setPlaceholderText("Enter a file name or path")
 
         self.browse_button = QtWidgets.QToolButton()
         self.browse_button.setText("Browse")
@@ -3003,6 +3593,12 @@ class ExportTaskPanel(QtWidgets.QDialog):
         self.export_status.setWordWrap(True)
         self.export_status.setObjectName("helperText")
         output_layout.addWidget(self.export_status)
+
+        self.export_feedback = QtWidgets.QLabel("")
+        self.export_feedback.setWordWrap(True)
+        self.export_feedback.setVisible(False)
+        self.export_feedback.setObjectName("exportFeedback")
+        output_layout.addWidget(self.export_feedback)
 
         left_column.addWidget(output_box)
 
@@ -3140,48 +3736,8 @@ class ExportTaskPanel(QtWidgets.QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        form = QtWidgets.QFormLayout()
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(10)
-
-        self.kicad_segments_spin = QtWidgets.QSpinBox()
-        self.kicad_segments_spin.setRange(8, 256)
-        self.kicad_segments_spin.setSingleStep(4)
-        self.kicad_segments_spin.setValue(32)
-
-        form.addRow("Curve segments", self.kicad_segments_spin)
-        layout.addLayout(form)
-
         note = QtWidgets.QLabel(
-            "KiCad PCB exports the panel as Edge.Cuts geometry in a minimal .kicad_pcb file."
-        )
-        note.setWordWrap(True)
-        note.setObjectName("helperText")
-        layout.addWidget(note)
-        layout.addStretch(1)
-
-        return page
-
-    def _build_kicad_svg_options(self):
-        page = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
-
-        form = QtWidgets.QFormLayout()
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(10)
-
-        self.kicad_svg_segments_spin = QtWidgets.QSpinBox()
-        self.kicad_svg_segments_spin.setRange(8, 256)
-        self.kicad_svg_segments_spin.setSingleStep(4)
-        self.kicad_svg_segments_spin.setValue(32)
-
-        form.addRow("Curve segments", self.kicad_svg_segments_spin)
-        layout.addLayout(form)
-
-        note = QtWidgets.QLabel(
-            "KiCad Edge SVG exports the panel outline and cutouts as a simple SVG suitable for Edge.Cuts workflows."
+            "KiCad DXF follows the manual Draft flow: select the last feature in the Body, run Shape2DView, then export the generated 2D object as a legacy-friendly DXF."
         )
         note.setWordWrap(True)
         note.setObjectName("helperText")
@@ -3235,8 +3791,7 @@ class ExportTaskPanel(QtWidgets.QDialog):
             "stl": ".stl",
             "svg": ".svg",
             "png": ".png",
-            "kicad": ".kicad_pcb",
-            "kicad_svg": ".svg",
+            "kicad": ".dxf",
         }.get(self._current_format(), ".stl")
 
     def _update_notes(self):
@@ -3251,49 +3806,89 @@ class ExportTaskPanel(QtWidgets.QDialog):
             notes.append("SVG exports vector geometry from the selected shape.")
         elif fmt == "png":
             notes.append("PNG captures the active 3D view.")
-        elif fmt == "kicad_svg":
-            notes.append("KiCad Edge SVG exports the panel outline as SVG for Edge.Cuts workflows.")
         else:
-            notes.append("KiCad PCB exports Edge.Cuts geometry as a board file.")
+            notes.append("KiCad DXF follows the Draft Shape2DView workflow on the final Body feature, then exports the generated 2D object as a legacy-friendly DXF.")
 
         self.notes.setPlainText("\n".join(notes))
 
     def _update_format_ui(self, *args):
-        self.options_stack.setCurrentIndex({"stl": 0, "svg": 1, "png": 2, "kicad": 3, "kicad_svg": 4}.get(self._current_format(), 0))
+        self.options_stack.setCurrentIndex({"stl": 0, "svg": 1, "png": 2, "kicad": 3}.get(self._current_format(), 0))
         self._update_output_path()
         self._update_notes()
 
-    def _update_output_path(self):
+    def _update_output_path(self, *args):
         obj = self.export_target
         if obj is None:
             return
 
-        current = self.output_path.text().strip()
-        if current:
-            stem, _ = os.path.splitext(current)
-            if stem:
-                self.output_path.setText(stem + self._current_extension())
-                return
+        current_path = self.output_path.text().strip()
+        current_dir = os.path.dirname(current_path) if current_path else ""
+
+        current_name = self.export_name.text().strip()
+        if current_name:
+            stem = _sanitize_file_stem(current_name)
+        elif current_path:
+            stem = _sanitize_file_stem(os.path.splitext(os.path.basename(current_path))[0])
+        else:
+            stem = _sanitize_file_stem(getattr(obj, "Name", getattr(obj, "Label", "EurorackPanel")))
 
         doc = App.ActiveDocument
-        default_dir = ""
-        if doc is not None and getattr(doc, "FileName", ""):
+        default_dir = current_dir or self._export_directory
+        if not default_dir and doc is not None and getattr(doc, "FileName", ""):
             default_dir = os.path.dirname(doc.FileName)
         if not default_dir:
             default_dir = os.path.expanduser("~")
 
-        self.output_path.setText(os.path.join(default_dir, _default_export_filename(obj, self._current_extension())))
+        self._export_directory = default_dir
+
+        self.output_path.setText(os.path.join(default_dir, stem + self._current_extension()))
+
+    def _set_export_feedback(self, success, message):
+        self.export_feedback.setVisible(True)
+        self.export_feedback.setText(message)
+        if success:
+            self.export_feedback.setStyleSheet(
+                "QLabel#exportFeedback {"
+                "background: rgba(31, 122, 74, 0.18);"
+                "border: 1px solid rgba(31, 122, 74, 150);"
+                "border-radius: 10px;"
+                "padding: 8px 10px;"
+                "color: #1f7a4a;"
+                "font-weight: 600;"
+                "}"
+            )
+        else:
+            self.export_feedback.setStyleSheet(
+                "QLabel#exportFeedback {"
+                "background: rgba(160, 55, 55, 0.12);"
+                "border: 1px solid rgba(160, 55, 55, 150);"
+                "border-radius: 10px;"
+                "padding: 8px 10px;"
+                "color: #a03737;"
+                "font-weight: 600;"
+                "}"
+            )
 
     def refresh_selection(self):
         self.export_target = _selected_export_target()
         self.target_name.setText(self._selected_object_name())
         self.target_type.setText(self._selected_object_type())
 
+        doc = App.ActiveDocument
+        doc_stem = None
+        if doc is not None and getattr(doc, "FileName", ""):
+            doc_stem = _sanitize_file_stem(os.path.splitext(os.path.basename(doc.FileName))[0])
+
         if self.export_target is None:
             self.export_status.setText("Select a panel body in the tree or model view.")
+            self.export_feedback.setVisible(False)
+            self.export_name.setText("")
         else:
             self.export_status.setText(f"Ready to export {self._selected_object_name()}.")
+            if not self.export_name.text().strip():
+                self.export_name.setText(doc_stem or getattr(self.export_target, "Name", getattr(self.export_target, "Label", "EurorackPanel")))
             self._update_output_path()
+            self.export_feedback.setVisible(False)
 
         self._update_notes()
 
@@ -3307,23 +3902,31 @@ class ExportTaskPanel(QtWidgets.QDialog):
             return
 
         doc = App.ActiveDocument
-        default_dir = ""
-        if doc is not None and getattr(doc, "FileName", ""):
+        current_output = self.output_path.text().strip()
+        default_dir = self._export_directory or (os.path.dirname(current_output) if current_output else "")
+        if not default_dir and doc is not None and getattr(doc, "FileName", ""):
             default_dir = os.path.dirname(doc.FileName)
         if not default_dir:
             default_dir = os.path.expanduser("~")
 
-        current = self.output_path.text().strip()
-        if not current:
-            current = os.path.join(default_dir, _default_export_filename(obj, self._current_extension()))
+        current_name = self.export_name.text().strip()
+        if current_name:
+            stem = _sanitize_file_stem(current_name)
+        elif current_output:
+            stem = _sanitize_file_stem(os.path.splitext(os.path.basename(current_output))[0])
+        else:
+            doc_stem = None
+            if doc is not None and getattr(doc, "FileName", ""):
+                doc_stem = _sanitize_file_stem(os.path.splitext(os.path.basename(doc.FileName))[0])
+            stem = doc_stem or _sanitize_file_stem(getattr(obj, "Name", getattr(obj, "Label", "EurorackPanel")))
+        current = os.path.join(default_dir, stem + self._current_extension())
 
         fmt = self._current_format()
         filters = {
             "stl": "STL Files (*.stl)",
             "svg": "SVG Files (*.svg)",
             "png": "PNG Files (*.png)",
-            "kicad": "KiCad PCB Files (*.kicad_pcb)",
-            "kicad_svg": "SVG Files (*.svg)",
+            "kicad": "DXF Files (*.dxf)",
         }
         filename, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
@@ -3335,6 +3938,7 @@ class ExportTaskPanel(QtWidgets.QDialog):
             return
         if not filename.lower().endswith(self._current_extension()):
             filename += self._current_extension()
+        self._export_directory = os.path.dirname(filename)
         self.output_path.setText(filename)
 
     def export_selected(self):
@@ -3342,14 +3946,13 @@ class ExportTaskPanel(QtWidgets.QDialog):
         obj = self.export_target
         if obj is None:
             self.export_status.setText("Select a panel body before exporting.")
+            self._set_export_feedback(False, "No panel selected.")
             return
 
         filename = self.output_path.text().strip()
         if not filename:
-            self.choose_output_path()
-            filename = self.output_path.text().strip()
-        if not filename:
-            self.export_status.setText("Export cancelled.")
+            self.export_status.setText("Enter a file name before exporting.")
+            self._set_export_feedback(False, "File name is required.")
             return
 
         fmt = self._current_format()
@@ -3367,27 +3970,27 @@ class ExportTaskPanel(QtWidgets.QDialog):
                 background_color=self.png_background_color,
                 panel_color=self.png_panel_color,
             )
-        elif fmt == "kicad_svg":
-            ok, result = export_selected_object_to_kicad_svg(
-                obj=obj,
-                filename=filename,
-                segments_per_curve=self.kicad_svg_segments_spin.value(),
-            )
         else:
-            ok, result = export_selected_object_to_kicad_pcb(
-                obj=obj,
-                filename=filename,
-                segments_per_curve=self.kicad_segments_spin.value(),
-            )
+            ok, result = export_selected_object_to_kicad_dxf(obj=obj, filename=filename)
 
         if ok:
-            self.export_status.setText(f"Exported {os.path.basename(result)}.")
+            self._export_directory = os.path.dirname(result)
+            exported_label = os.path.basename(result)
+            pcb_obj = _pcb_object_for_export(obj) if fmt == "kicad" else None
+            if fmt == "kicad" and pcb_obj is not None:
+                pcb_name = os.path.basename(_pcb_export_filename(result))
+                self.export_status.setText(f"Exported {exported_label} and {pcb_name}.")
+                self._set_export_feedback(True, f"Export complete: {exported_label} and {pcb_name}")
+            else:
+                self.export_status.setText(f"Exported {exported_label}.")
+                self._set_export_feedback(True, f"Export complete: {exported_label}")
             try:
                 App.Console.PrintMessage(f"\nExported panel: {result}\n")
             except Exception:
                 pass
         else:
             self.export_status.setText(result)
+            self._set_export_feedback(False, result)
 
     def reject(self):
         global ACTIVE_EXPORT_TASK_PANEL

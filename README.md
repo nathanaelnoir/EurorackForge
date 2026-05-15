@@ -5,575 +5,163 @@
 </p>
 
 <p align="center">
-  <strong>A FreeCAD workbench for creating Eurorack faceplates.</strong>
+  <strong>A FreeCAD workbench for designing Eurorack front panels.</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/FreeCAD-Macro-blue" alt="FreeCAD Macro">
+  <img src="https://img.shields.io/badge/FreeCAD-Workbench-blue" alt="FreeCAD Workbench">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License">
-  <img src="https://img.shields.io/badge/Version-1.0.0-orange" alt="Version 1.0.0">
 </p>
 
----
+## What it does
 
-## Overview
+EurorackForge is a FreeCAD workbench for building Eurorack panel geometry directly inside FreeCAD.
 
-**EurorackForge** is a FreeCAD workbench for creating Eurorack synthesizer faceplates directly inside FreeCAD.
+It is focused on fast panel creation, previewing, and export. The current workflow covers:
 
-It is designed to help makers, musicians, DIY synthesizer builders, and hardware designers quickly generate panel geometry for Eurorack modules.
+- Creating Eurorack faceplates from presets or custom dimensions
+- Previewing the panel layout before creation
+- Saving and reusing panel presets
+- Exporting the selected panel to STL, SVG, PNG, or KiCad DXF
+- Optionally creating a matching PCB geometry behind the faceplate
+- Exporting a second `_pcb.dxf` file when PCB creation is enabled
 
-Typical use cases include:
+## Included panel types
 
-- Creating Eurorack faceplates / front panels
-- Prototyping module layouts
-- Generating simple panel geometry in FreeCAD
-- Preparing designs for CNC, laser cutting, 3D printing, or further CAD work
+EurorackForge can generate:
 
----
+- Doepfer Eurorack
+- Intellijel 1U
+- Pulp Logic 1U
+- Kosmo / LMNC
+- Custom panels
 
-## Feature
-- Generates Doepfer-style Eurorack panels by default
-- Also supports Intellijel 1U, Pulp Logic 1U, Kosmo, and custom panel formats
-- Opens a guided task panel with presets, a live summary, and a 2D preview
-- Lets you save, load, and delete panel presets locally
-- Opens an export dialog for STL, SVG, PNG, KiCad PCB, and KiCad Edge SVG output
-- Includes a custom SVG icon
-- Can be installed through FreeCAD Addon Manager as a custom GitHub repository
-- Exposes the generator from the Eurorack Forge workbench toolbar
-- Keeps a macro wrapper for compatibility
+For the supported standards, the workbench builds the panel dimensions and hole layout for you.
 
----
+## Main workflow
 
-## Preview
+1. Open the **Eurorack Forge** workbench.
+2. Click **Create Faceplate**.
+3. Choose the panel type and set the dimensions or HP value.
+4. Optionally enable **Create PCB behind faceplate**.
+5. Create the panel.
+6. Select the resulting body in the tree.
+7. Use **Export Panel** to write the output file.
 
-<p align="center">
-  <img src="EurorackForge.svg" alt="EurorackForge icon preview" width="128">
-</p>
+## Faceplate creation
 
-> Screenshot preview can be added here later.
+The faceplate task panel provides:
 
-Recommended screenshot path:
+- A live 2D preview
+- A layout summary
+- Preset save / load / delete support
+- Standard-specific defaults
+- Custom width, height, thickness, and hole settings
+- Optional PCB generation behind the faceplate
 
-```text
-screenshots/eurorackforge-preview.png
-```
+The preview is meant to stay usable on smaller screens, and the task panel now scales better than before.
 
-Then add this to the README after you add a screenshot:
+## Export options
 
-```markdown
-![EurorackForge preview](screenshots/eurorackforge-preview.png)
-```
+The export dialog currently supports:
 
----
+| Format | Result |
+| --- | --- |
+| STL | 3D mesh export of the selected body |
+| SVG | Vector export of the selected panel shape |
+| PNG | Rendered image of the current view |
+| KiCad DXF | Draft-based 2D export of the faceplate |
 
-## Files
+### KiCad DXF export
 
-```text
-EurorackForge/
-├── EurorackForge.FCMacro
-├── EurorackForge.svg
-├── README.md
-├── LICENSE
-└── package.xml
-```
+The KiCad DXF export follows the same Draft workflow as the manual FreeCAD steps:
 
-File descriptions:
+1. Create a `Shape2DView`
+2. Export that 2D result as DXF
 
-- `EurorackForge.FCMacro` — the FreeCAD macro
-- `EurorackForge.svg` — the macro icon
-- `package.xml` — FreeCAD Addon Manager metadata
-- `README.md` — project documentation
-- `LICENSE` — project license
+When PCB creation is enabled, EurorackForge also writes a second DXF file for the PCB:
 
----
+- `panel.dxf`
+- `panel_pcb.dxf`
 
-# Installation
+The PCB DXF is generated directly in Python as a simple closed outline, which keeps it predictable and easy to import into KiCad or Adobe tools.
+The PCB outline uses a fixed 100 mm height and a width derived from the panel HP or custom panel width.
 
-## Option 1: Install through FreeCAD Addon Manager using a custom GitHub repository
+## File naming
 
-This is the recommended installation method while the macro is hosted on GitHub.
+The export dialog includes a dedicated **Export name** field next to the selected object and type.
 
-### 1. Add this repository to FreeCAD
+Behavior:
 
-Open FreeCAD and go to:
+- The default export name is based on the FreeCAD document filename
+- The chosen export folder is remembered
+- Export refuses to overwrite an existing file
 
-```text
-Edit → Preferences → Addon Manager
-```
+## Installation
 
-Find the section for custom repositories.
+### Via FreeCAD Addon Manager
 
-Add this repository URL:
+1. Open FreeCAD.
+2. Go to **Tools > Addon Manager**.
+3. Add this repository as a custom repository if needed.
+4. Install **EurorackForge**.
+5. Restart FreeCAD if necessary.
+
+Repository URL:
 
 ```text
 https://github.com/nathanaelnoir/EurorackForge
 ```
 
-Use this branch:
+### Manual install
 
-```text
-main
-```
+Copy these files into your FreeCAD macro/workbench directory:
 
-Click **Apply** or **OK**.
+- `EurorackForge.FCMacro`
+- `EurorackForge.svg`
 
-Restart FreeCAD if needed.
+After installation, the workbench is available as **Eurorack Forge**.
 
----
+## Commands
 
-### 2. Install EurorackForge
+The workbench exposes two main commands:
 
-Open:
+- **Create Faceplate**
+- **Export Panel**
 
-```text
-Tools → Addon Manager
-```
+They are available from the toolbar, menu, and context menu.
 
-Search for:
+## Notes
 
-```text
-EurorackForge
-```
+- The panel generator is centered around the model origin.
+- The exporter expects you to select the panel body or the generated panel object in the tree.
+- KiCad DXF export is intended for panel outline workflows and companion PCB outlines.
+- The workbench keeps a macro wrapper for compatibility, but the main experience is the FreeCAD workbench itself.
 
-Install it.
+## Troubleshooting
 
-After installation, the macro should be available from:
+### The export file already exists
 
-```text
-Macro → Macros…
-```
+EurorackForge now stops instead of overwriting existing files. Choose a different name or folder.
 
----
+### The PCB DXF looks wrong
 
-## Option 2: Manual installation
+Make sure PCB creation was enabled when the panel was generated. The PCB file is written from the panel spec, not from a projected solid.
 
-Download these two files:
+### The panel preview looks clipped
 
-```text
-EurorackForge.FCMacro
-EurorackForge.svg
-```
+The faceplate task panel resizes itself for smaller screens, but very small displays may still benefit from a taller window or a scrollable layout.
 
-Copy both files into your FreeCAD macro directory.
+## Repository files
 
-You can find your macro directory in FreeCAD here:
+- `EurorackForge.py` - main workbench code
+- `InitGui.py` - FreeCAD workbench registration
+- `EurorackForge.FCMacro` - compatibility macro wrapper
+- `EurorackForge.svg` - workbench icon
+- `EurorackForgeExport.svg` - export icon
+- `package.xml` - Addon Manager metadata
+- `LICENSE.md` - MIT license
 
-```text
-Macro → Macros…
-```
+## License
 
-Restart FreeCAD if needed.
-
-Then run the macro from:
-
-```text
-Macro → Macros… → EurorackForge
-```
-
----
-
-# Add EurorackForge to a toolbar
-
-Addon Manager installs the macro, but FreeCAD does **not** automatically place macro buttons into a toolbar.
-
-To add EurorackForge to a toolbar manually, follow these steps.
-
----
-
-## Step 1: Register the macro as a toolbar command
-
-In FreeCAD, open:
-
-```text
-Tools → Customize…
-```
-
-Go to the **Macros** tab.
-
-Select the macro file:
-
-```text
-EurorackForge.FCMacro
-```
-
-Fill in the fields like this:
-
-```text
-Menu text: EurorackForge
-Tool tip: Generate Eurorack facepanels
-Status text: Generate Eurorack facepanels
-Pixmap / Icon: EurorackForge.svg
-```
-
-Click:
-
-```text
-Add
-```
-
-This makes the macro appear as a command in the **Macros** category.
-
----
-
-## Step 2: Create a “My Tools” toolbar
-
-Still inside:
-
-```text
-Tools → Customize…
-```
-
-Go to the **Toolbars** tab.
-
-Create a new toolbar.
-
-Name it:
-
-```text
-My Tools
-```
-
-Make sure the toolbar is enabled.
-
----
-
-## Step 3: Add EurorackForge to the toolbar
-
-In the **Toolbars** tab:
-
-1. Select the toolbar:
-
-   ```text
-   My Tools
-   ```
-
-2. In the command category list, choose:
-
-   ```text
-   Macros
-   ```
-
-3. Select:
-
-   ```text
-   EurorackForge
-   ```
-
-4. Click the arrow button or **Add** button to move it into the toolbar.
-
-5. Click:
-
-   ```text
-   Apply
-   ```
-
-6. Click:
-
-   ```text
-   OK
-   ```
-
-The EurorackForge button should now appear in your **My Tools** toolbar.
-
----
-
-## If EurorackForge does not appear in the Macros category
-
-Make sure you completed this step first:
-
-```text
-Tools → Customize… → Macros tab → Add
-```
-
-Simply installing or creating the macro is not enough.
-
-FreeCAD only shows the macro in the **Macros** command category after it has been added through the **Macros** tab in the Customize dialog.
-
-Also check that these files are inside the FreeCAD macro folder:
-
-```text
-EurorackForge.FCMacro
-EurorackForge.svg
-```
-
----
-
-# Usage
-
-After installation, run EurorackForge from:
-
-```text
-Macro → Macros… → EurorackForge
-```
-
-or, if you added it to a toolbar:
-
-```text
-My Tools → EurorackForge button
-```
-
-The macro will generate Eurorack facepanel geometry inside the active FreeCAD document.
-
-To export a panel, select the panel body in the model tree and use:
-
-```text
-Eurorack Forge → Export Panel
-```
-
-The export dialog lets you choose:
-
-- STL for the solid body
-- SVG for vector geometry
-- PNG for a rendered image of the current view
-- KiCad PCB for Edge.Cuts-only board geometry
-- KiCad Edge SVG for Edge.Cuts SVG workflows
-
-If no document is open, the macro may create a new one depending on the macro implementation.
-
----
-
-# Best Practices
-
-## Keep the macro and icon names identical
-
-Use matching base names:
-
-```text
-EurorackForge.FCMacro
-EurorackForge.svg
-```
-
-This makes FreeCAD icon handling easier and keeps the project clean.
-
----
-
-## Keep the repository structure simple
-
-Recommended structure:
-
-```text
-EurorackForge/
-├── EurorackForge.FCMacro
-├── EurorackForge.svg
-├── README.md
-├── LICENSE
-├── package.xml
-└── screenshots/
-    └── eurorackforge-preview.png
-```
-
----
-
-## Use clear version numbers
-
-Use semantic versioning:
-
-```text
-1.0.0
-1.0.1
-1.1.0
-2.0.0
-```
-
-Example:
-
-- `1.0.0` — first stable release
-- `1.0.1` — small bug fix
-- `1.1.0` — new feature
-- `2.0.0` — major change
-
----
-
-## Add screenshots
-
-A screenshot helps users understand what the macro does before installing it.
-
-Recommended location:
-
-```text
-screenshots/eurorackforge-preview.png
-```
-
-Then show it in the README:
-
-```markdown
-![EurorackForge preview](screenshots/eurorackforge-preview.png)
-```
-
----
-
-## Keep `package.xml` updated
-
-When you release a new version, update:
-
-```xml
-<version>1.0.0</version>
-<date>2026-05-11</date>
-```
-
-Also make sure the icon is listed at the package level:
-
-```xml
-<icon>EurorackForge.svg</icon>
-```
-
-and inside the macro block:
-
-```xml
-<content>
-  <macro>
-    <name>EurorackForge</name>
-    <description>A simple FreeCAD macro for generating Eurorack facepanels.</description>
-    <file>EurorackForge.FCMacro</file>
-    <icon>EurorackForge.svg</icon>
-  </macro>
-</content>
-```
-
----
-
-## Use a release on GitHub
-
-After changes are tested, create a GitHub release.
-
-Example tag:
-
-```text
-v1.0.0
-```
-
-Example release notes:
-
-```markdown
-Initial release.
-
-Features:
-- Generates Eurorack facepanel geometry
-- Includes FreeCAD macro
-- Includes SVG icon
-- Includes Addon Manager package metadata
-```
-
----
-
-# Current limitations
-
-EurorackForge ships as a FreeCAD workbench with a macro wrapper for compatibility.
-
-That means:
-
-- Addon Manager can install the workbench package.
-- The Create Faceplate command appears in the Eurorack Forge toolbar and menu.
-- The macro entry point still works for users who prefer launching it from the Macro dialog.
-
----
-
-# Troubleshooting
-
-## The macro installed, but no toolbar button appeared
-
-This is expected.
-
-Add it manually using:
-
-```text
-Tools → Customize… → Macros tab
-```
-
-Then add it to:
-
-```text
-Tools → Customize… → Toolbars tab → My Tools
-```
-
----
-
-## The icon does not appear in the toolbar
-
-Check that the icon file exists:
-
-```text
-EurorackForge.svg
-```
-
-Check that the file name matches exactly, including capitalization.
-
-Correct:
-
-```text
-EurorackForge.svg
-```
-
-Incorrect:
-
-```text
-eurorackforge.svg
-Eurorackforge.svg
-EurorackForge.SVG
-```
-
-Then re-add the macro through:
-
-```text
-Tools → Customize… → Macros
-```
-
-and select the SVG icon again.
-
----
-
-## The Addon Manager shows a default image
-
-Make sure `package.xml` contains:
-
-```xml
-<icon>EurorackForge.svg</icon>
-```
-
-near the top level of the package.
-
-Also make sure this file exists in the repository root:
-
-```text
-EurorackForge.svg
-```
-
-If it still shows a default image, refresh the Addon Manager cache or restart FreeCAD.
-
-Some FreeCAD versions may handle PNG previews more reliably than SVG package icons. In that case, add:
-
-```text
-EurorackForge.png
-```
-
-and use this in `package.xml`:
-
-```xml
-<icon>EurorackForge.png</icon>
-```
-
-You can still keep the toolbar macro icon as SVG.
-
----
-
-# License
-
-This project is licensed under the MIT License.
-
-See:
-
-```text
-LICENSE
-```
-
----
-
-# Author
-
-Created by **nathanaelnoir**.
-
-Repository:
-
-```text
-https://github.com/nathanaelnoir/EurorackForge
-```
+MIT License. See [LICENSE.md](LICENSE.md).
