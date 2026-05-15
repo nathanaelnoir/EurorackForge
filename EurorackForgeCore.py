@@ -1205,6 +1205,103 @@ def _default_export_filename(obj, extension):
     return _sanitize_file_stem(label) + extension
 
 
+def _sanitize_file_stem(text):
+    cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in text.strip())
+    cleaned = cleaned.strip("_")
+    return cleaned or "EurorackPanel"
+
+
+def _export_path_conflict(filename):
+    return os.path.exists(filename)
+
+
+def _export_conflict_message(filename):
+    return f"Export target already exists: {filename}"
+
+
+def _pcb_export_filename(filename):
+    stem, ext = os.path.splitext(filename)
+    if not ext:
+        ext = ".dxf"
+    return stem + "_pcb" + ext
+
+
+def _pcb_dxf_text_from_spec(spec):
+    width_mm, height_mm, _ = pcb_outline_dimensions_from_spec(spec)
+    half_width = width_mm / 2.0
+    half_height = height_mm / 2.0
+
+    lines = [
+        "0", "SECTION",
+        "2", "HEADER",
+        "0", "ENDSEC",
+        "0", "SECTION",
+        "2", "TABLES",
+        "0", "ENDSEC",
+        "0", "SECTION",
+        "2", "ENTITIES",
+        "0", "LWPOLYLINE",
+        "8", "0",
+        "90", "4",
+        "70", "1",
+    ]
+
+    points = [
+        (-half_width, -half_height),
+        (half_width, -half_height),
+        (half_width, half_height),
+        (-half_width, half_height),
+    ]
+    for x, y in points:
+        lines.extend([
+            "10", _kicad_num(x),
+            "20", _kicad_num(y),
+        ])
+
+    lines.extend([
+        "0", "ENDSEC",
+        "0", "EOF",
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def _pcb_object_for_export(obj):
+    if obj is None:
+        return None
+
+    doc = obj.Document or App.ActiveDocument
+    if doc is None:
+        return None
+
+    candidate_names = [
+        getattr(obj, "EurorackForgePCBObjectName", ""),
+        getattr(getattr(obj, "BaseFeature", None), "EurorackForgePCBObjectName", ""),
+    ]
+    for candidate_name in candidate_names:
+        if not candidate_name:
+            continue
+        candidate = doc.getObject(candidate_name)
+        if candidate is not None:
+            return candidate
+
+    linked_name = getattr(obj, "Name", "")
+    if linked_name:
+        for candidate in getattr(doc, "Objects", []) or []:
+            if getattr(candidate, "EurorackForgeRole", "") == "PCB" and getattr(candidate, "EurorackForgePCBOf", "") == linked_name:
+                return candidate
+
+    spec = _export_spec_from_obj(obj)
+    if spec is None:
+        return None
+
+    pcb_name = f"{spec['standard_key']}_{str(spec['width_value']).replace('.', '_')}_{spec['cutout_type']}_PCB"
+    candidate = doc.getObject(pcb_name)
+    if candidate is not None:
+        return candidate
+
+    return None
+
+
 def _kicad_num(value):
     text = f"{float(value):.6f}".rstrip("0").rstrip(".")
     if text in ("-0", "-0.0", ""):

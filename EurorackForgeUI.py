@@ -1,5 +1,7 @@
 from EurorackForgeCore import *
 from EurorackForgeExport import *
+# Ensure helper is explicitly available (fixes runtime name-resolution in some FreeCAD loads)
+from EurorackForgeCore import _selected_export_target
 
 ACTIVE_FACEPLATE_TASK_PANEL = None
 ACTIVE_EXPORT_TASK_PANEL = None
