@@ -56,6 +56,7 @@ The faceplate task panel provides:
 - A layout summary
 - Preset save / load / delete support
 - Standard-specific defaults
+- A Doepfer width basis switch for mathematical or published actual widths
 - Custom width, height, thickness, and hole settings
 - Optional PCB generation behind the faceplate
 

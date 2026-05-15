@@ -12,20 +12,23 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         super().__init__(parent)
 
         self.setWindowTitle("Create Eurorack Faceplate")
-        self.setMinimumWidth(720)
-        self.setMinimumHeight(480)
+        self.setMinimumWidth(980)
+        self.setMinimumHeight(640)
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
         self.form = self
         self.created_body = None
         self.created_source = None
         self.created_spec = None
+        self._creation_feedback_anim = None
 
         self._build_ui()
         self._apply_style()
+        self._apply_creator_style()
         self._apply_standard_defaults(STANDARD_DOEPFER)
         self.refresh_preset_list()
         self.refresh_summary()
+        self._set_creation_feedback(False, "")
         self._fit_to_available_screen()
 
     def _build_ui(self):
@@ -41,6 +44,7 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         root.addWidget(body_scroll, 1)
 
         body = QtWidgets.QWidget()
+        body.setObjectName("creatorBody")
         body_scroll.setWidget(body)
         body_layout = QtWidgets.QVBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
@@ -50,6 +54,7 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         body_layout.addWidget(self.tabs, 1)
 
         panel_tab = QtWidgets.QWidget()
+        panel_tab.setObjectName("creatorPage")
         panel_root = QtWidgets.QVBoxLayout(panel_tab)
         panel_root.setContentsMargins(0, 0, 0, 0)
         panel_root.setSpacing(14)
@@ -247,10 +252,21 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
 
         panel_root.addLayout(content)
 
+        self.creation_feedback = QtWidgets.QLabel("")
+        self.creation_feedback.setObjectName("creationFeedback")
+        self.creation_feedback.setWordWrap(True)
+        self.creation_feedback.setVisible(False)
+        self.creation_feedback_effect = QtWidgets.QGraphicsOpacityEffect(self.creation_feedback)
+        self.creation_feedback_effect.setOpacity(1.0)
+        self.creation_feedback.setGraphicsEffect(self.creation_feedback_effect)
+        panel_root.addWidget(self.creation_feedback)
+
         self.button_box = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
         )
-        self.button_box.button(QtWidgets.QDialogButtonBox.Ok).setText("Create Panel")
+        self.create_button = self.button_box.button(QtWidgets.QDialogButtonBox.Ok)
+        self.create_button.setText("Create Panel")
+        self.create_button.setObjectName("primaryButton")
         self.button_box.button(QtWidgets.QDialogButtonBox.Cancel).setText("Close")
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
@@ -273,8 +289,8 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         if available.isNull():
             return
 
-        target_width = min(940, int(available.width() * 0.88))
-        target_height = min(650, int(available.height() * 0.78))
+        target_width = min(980, int(available.width() * 0.92))
+        target_height = min(720, int(available.height() * 0.84))
         target_width = max(self.minimumWidth(), target_width)
         target_height = max(self.minimumHeight(), target_height)
         self.resize(target_width, target_height)
@@ -297,6 +313,11 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         self.doepfer_hp_spin.setSuffix(" HP")
         self.doepfer_hp_spin.valueChanged.connect(self.refresh_summary)
 
+        self.doepfer_width_mode_combo = QtWidgets.QComboBox()
+        for key, label in DOEPFER_WIDTH_OPTIONS:
+            self.doepfer_width_mode_combo.addItem(label, key)
+        self.doepfer_width_mode_combo.currentIndexChanged.connect(self.refresh_summary)
+
         self.doepfer_thickness_spin = QtWidgets.QDoubleSpinBox()
         self.doepfer_thickness_spin.setRange(0.5, 20.0)
         self.doepfer_thickness_spin.setDecimals(2)
@@ -315,6 +336,7 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         self.doepfer_narrow_combo.currentIndexChanged.connect(self.refresh_summary)
 
         form.addRow("Width", self.doepfer_hp_spin)
+        form.addRow("Width basis", self.doepfer_width_mode_combo)
         form.addRow("Thickness", self.doepfer_thickness_spin)
         form.addRow("", self.doepfer_center_checkbox)
         form.addRow("Narrow layout", self.doepfer_narrow_combo)
@@ -322,7 +344,7 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         layout.addLayout(form)
 
         helper = QtWidgets.QLabel(
-            "Doepfer mode follows the Eurorack 3U panel conventions with HP-based width, 2 mm default thickness, and a selectable narrow-panel diagonal below 12 HP."
+            "Doepfer mode follows the Eurorack 3U panel conventions with HP-based width, 2 mm default thickness, a selectable narrow-panel diagonal below 12 HP, and a switch for mathematical or published actual widths."
         )
         helper.setWordWrap(True)
         helper.setObjectName("helperText")
@@ -533,6 +555,15 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
                 padding: 8px;
             }
 
+            QLabel#creationFeedback {
+                border: 1px solid rgba(31, 122, 74, 150);
+                border-radius: 10px;
+                padding: 8px 10px;
+                background: rgba(31, 122, 74, 0.14);
+                color: #cfeedd;
+                font-weight: 600;
+            }
+
             QToolButton {
                 border: 1px solid rgba(120, 140, 160, 120);
                 border-radius: 8px;
@@ -571,9 +602,77 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
             """
         )
 
+    def _apply_creator_style(self):
+        self.setStyleSheet(
+            self.styleSheet()
+            + """
+            QTabWidget::pane {
+                border: 1px solid rgba(120, 140, 160, 90);
+                border-radius: 12px;
+                background: rgba(255, 255, 255, 10);
+                top: -1px;
+            }
+
+            QTabBar::tab {
+                border: 1px solid rgba(120, 140, 160, 90);
+                border-bottom: none;
+                border-top-left-radius: 10px;
+                border-top-right-radius: 10px;
+                padding: 7px 14px;
+                margin-right: 6px;
+                background: rgba(255, 255, 255, 18);
+                color: rgba(235, 240, 245, 230);
+                font-weight: 600;
+            }
+
+            QTabBar::tab:selected {
+                background: rgba(255, 255, 255, 32);
+                color: white;
+            }
+
+            QScrollArea {
+                background: palette(window);
+                border: none;
+            }
+
+            QScrollArea::viewport {
+                background: palette(window);
+                border: none;
+            }
+
+            QAbstractScrollArea {
+                background: palette(window);
+                border: none;
+            }
+
+            QWidget#creatorBody,
+            QWidget#creatorPage {
+                background: palette(window);
+            }
+
+            QFrame#heroPanel {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                            stop:0 rgba(34, 49, 62, 245),
+                                            stop:1 rgba(26, 70, 71, 245));
+            }
+
+            QGroupBox {
+                border: 1px solid rgba(120, 140, 160, 82);
+                background: rgba(255, 255, 255, 18);
+            }
+
+            QPlainTextEdit {
+                background: rgba(255, 255, 255, 18);
+            }
+            """
+        )
+
     def _apply_standard_defaults(self, standard_key):
         if standard_key == STANDARD_DOEPFER:
             self.doepfer_hp_spin.setValue(8)
+            default_width_mode = self.doepfer_width_mode_combo.findData(DOEPFER_WIDTH_ACTUAL)
+            if default_width_mode >= 0:
+                self.doepfer_width_mode_combo.setCurrentIndex(default_width_mode)
             self.doepfer_thickness_spin.setValue(2.0)
             self.doepfer_center_checkbox.setChecked(CENTER_SINGLE_HOLE_COLUMN)
             default_orientation = self.doepfer_narrow_combo.findData(DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT)
@@ -758,6 +857,10 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
 
         if standard_key == STANDARD_DOEPFER:
             self.doepfer_hp_spin.setValue(int(spec.get("width_value", 8)))
+            width_mode = spec.get("doepfer_width_mode", DOEPFER_WIDTH_MATHEMATICAL)
+            width_mode_index = self.doepfer_width_mode_combo.findData(width_mode)
+            if width_mode_index >= 0:
+                self.doepfer_width_mode_combo.setCurrentIndex(width_mode_index)
             self.doepfer_thickness_spin.setValue(float(spec.get("thickness_mm", 2.0)))
             self.doepfer_center_checkbox.setChecked(
                 bool(spec.get("doepfer_center_single_hole_column", CENTER_SINGLE_HOLE_COLUMN))
@@ -802,6 +905,7 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
                 standard_key,
                 cutout_type,
                 doepfer_hp=self.doepfer_hp_spin.value(),
+                doepfer_width_mode=self.doepfer_width_mode_combo.currentData(),
                 doepfer_center_single_hole_column=self.doepfer_center_checkbox.isChecked(),
                 doepfer_narrow_diagonal_key=self.doepfer_narrow_combo.currentData(),
                 doepfer_thickness_mm=self.doepfer_thickness_spin.value(),
@@ -857,17 +961,67 @@ class FaceplateTaskPanel(QtWidgets.QDialog):
         self.summary_box.setPlainText(panel_layout_summary_from_spec(spec))
         self.preview.setParameters(spec, show_pcb=self.create_pcb_checkbox.isChecked())
 
+    def _set_creation_feedback(self, success, message):
+        if not hasattr(self, "creation_feedback"):
+            return
+
+        self.creation_feedback.setVisible(bool(message))
+        self.creation_feedback.setText(message)
+        if success:
+            self.creation_feedback_effect.setOpacity(0.0)
+            self.creation_feedback.setStyleSheet(
+                "QLabel#creationFeedback {"
+                "border: 1px solid rgba(31, 122, 74, 150);"
+                "border-radius: 10px;"
+                "padding: 8px 10px;"
+                "background: rgba(31, 122, 74, 0.14);"
+                "color: #cfeedd;"
+                "font-weight: 600;"
+                "}"
+            )
+            self._creation_feedback_anim = QtCore.QPropertyAnimation(self.creation_feedback_effect, b"opacity", self)
+            self._creation_feedback_anim.setDuration(260)
+            self._creation_feedback_anim.setStartValue(0.0)
+            self._creation_feedback_anim.setEndValue(1.0)
+            try:
+                self._creation_feedback_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+            except Exception:
+                pass
+            self._creation_feedback_anim.start()
+        else:
+            self.creation_feedback_effect.setOpacity(1.0)
+            self.creation_feedback.setStyleSheet(
+                "QLabel#creationFeedback {"
+                "border: 1px solid rgba(120, 140, 160, 90);"
+                "border-radius: 10px;"
+                "padding: 8px 10px;"
+                "background: rgba(255, 255, 255, 14);"
+                "color: rgba(230, 235, 240, 200);"
+                "font-weight: 600;"
+                "}"
+            )
+
     def getStandardButtons(self):
         return int(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
 
     def accept(self):
         global ACTIVE_FACEPLATE_TASK_PANEL
-        panel_spec = self._current_spec()
-        self.created_spec = panel_spec
-        self.created_body = create_panel_from_spec(panel_spec, create_pcb=self.create_pcb_checkbox.isChecked())
-        self.created_source = getattr(self.created_body, "BaseFeature", None) if self.created_body is not None else None
-        ACTIVE_FACEPLATE_TASK_PANEL = self
-        self.refresh_summary()
+        try:
+            panel_spec = self._current_spec()
+            self.created_spec = panel_spec
+            self.created_body = create_panel_from_spec(panel_spec, create_pcb=self.create_pcb_checkbox.isChecked())
+            self.created_source = getattr(self.created_body, "BaseFeature", None) if self.created_body is not None else None
+            ACTIVE_FACEPLATE_TASK_PANEL = self
+            self.refresh_summary()
+            if self.created_body is not None:
+                self._set_creation_feedback(
+                    True,
+                    f"Created {panel_spec['display_name']} and selected it in the model tree."
+                )
+            else:
+                self._set_creation_feedback(False, "Panel creation did not return a body.")
+        except Exception as exc:
+            self._set_creation_feedback(False, f"Panel creation failed: {exc}")
         return True
 
     def reject(self):
@@ -967,12 +1121,14 @@ def create_eurorack_panel(
     cutout_type,
     center_single_hole_column=CENTER_SINGLE_HOLE_COLUMN,
     narrow_diagonal_key=DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT,
+    width_mode=DOEPFER_WIDTH_ACTUAL,
     thickness_mm=PANEL_THICKNESS,
 ):
     spec = build_panel_spec(
         STANDARD_DOEPFER,
         cutout_type,
         doepfer_hp=hp,
+        doepfer_width_mode=width_mode,
         doepfer_center_single_hole_column=center_single_hole_column,
         doepfer_narrow_diagonal_key=narrow_diagonal_key,
         doepfer_thickness_mm=thickness_mm,

@@ -26,6 +26,32 @@ PANEL_THICKNESS = 2.0
 
 WIDTH_CLEARANCE = 0.30
 
+DOEPFER_WIDTH_MATHEMATICAL = "mathematical"
+DOEPFER_WIDTH_ACTUAL = "actual"
+DOEPFER_WIDTH_OPTIONS = [
+    (DOEPFER_WIDTH_MATHEMATICAL, "Mathematical"),
+    (DOEPFER_WIDTH_ACTUAL, "Actual"),
+]
+
+DOEPFER_ACTUAL_WIDTHS_MM = {
+    1: 5.00,
+    1.5: 7.50,
+    2: 9.80,
+    4: 20.00,
+    6: 30.00,
+    8: 40.30,
+    10: 50.50,
+    12: 60.60,
+    14: 70.80,
+    16: 80.90,
+    18: 91.30,
+    20: 101.30,
+    21: 106.30,
+    22: 111.40,
+    28: 141.90,
+    42: 213.00,
+}
+
 HOLE_DIAMETER = 3.2
 HOLE_RADIUS = HOLE_DIAMETER / 2.0
 
@@ -153,9 +179,15 @@ def cutout_label(cutout_type):
     return "Horizontal slots"
 
 
-def hp_to_width_text(hp):
-    width = eurorack_panel_width(hp)
-    return f"{hp} HP / {width:.2f} mm"
+def hp_to_width_text(hp, width_mode=DOEPFER_WIDTH_MATHEMATICAL):
+    mathematical_width = hp * HP_MM - WIDTH_CLEARANCE
+
+    if width_mode == DOEPFER_WIDTH_ACTUAL:
+        actual_width = doepfer_actual_width_mm(hp)
+        if actual_width is not None:
+            return f"{hp} HP / {actual_width:.2f} mm ({mathematical_width:.2f} mm mathematical)"
+
+    return f"{hp} HP / {mathematical_width:.2f} mm"
 
 
 def format_positions(values):
@@ -178,7 +210,12 @@ def standard_label(standard_key):
     return standard_key
 
 
-def doepfer_width_mm(hp):
+def doepfer_width_mm(hp, width_mode=DOEPFER_WIDTH_MATHEMATICAL):
+    if width_mode == DOEPFER_WIDTH_ACTUAL:
+        actual_width = doepfer_actual_width_mm(hp)
+        if actual_width is not None:
+            return actual_width
+
     return hp * HP_MM - WIDTH_CLEARANCE
 
 
@@ -209,11 +246,31 @@ def doepfer_narrow_layout_label(layout_key):
     return DOEPFER_NARROW_DIAGONAL_OPTIONS[0][1]
 
 
+def doepfer_width_mode_label(width_mode):
+    for key, label in DOEPFER_WIDTH_OPTIONS:
+        if key == width_mode:
+            return label
+
+    return DOEPFER_WIDTH_OPTIONS[0][1]
+
+
+def doepfer_width_mode_suffix(width_mode):
+    if width_mode == DOEPFER_WIDTH_MATHEMATICAL:
+        return ""
+
+    return f" [{doepfer_width_mode_label(width_mode)}]"
+
+
+def doepfer_actual_width_mm(hp):
+    return DOEPFER_ACTUAL_WIDTHS_MM.get(hp)
+
+
 def build_panel_spec(
     standard_key,
     cutout_type,
     *,
     doepfer_hp=8,
+    doepfer_width_mode=DOEPFER_WIDTH_ACTUAL,
     doepfer_center_single_hole_column=CENTER_SINGLE_HOLE_COLUMN,
     doepfer_narrow_diagonal_key=DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT,
     doepfer_thickness_mm=PANEL_THICKNESS,
@@ -232,7 +289,8 @@ def build_panel_spec(
 
     if standard_key == STANDARD_DOEPFER:
         width_value = doepfer_hp
-        width_mm = doepfer_width_mm(width_value)
+        width_mm = doepfer_width_mm(width_value, doepfer_width_mode)
+        mathematical_width_mm = width_value * HP_MM - WIDTH_CLEARANCE
         height_mm = PANEL_HEIGHT
         thickness_mm = doepfer_thickness_mm
         hole_diameter_mm = HOLE_DIAMETER
@@ -240,11 +298,26 @@ def build_panel_spec(
         hole_y_margin_mm = HOLE_Y_FROM_EDGE
         hole_layout_key = "doepfer"
         width_unit_label = "HP"
-        width_display = f"{width_value} HP"
-        display_name = f"Doepfer Eurorack {width_value} HP"
-        conformance_note = (
-            f"Doepfer-style 3U panel with 5.08 mm HP grid, 128.5 mm height, and {thickness_mm:.1f} mm thickness."
-        )
+        if doepfer_width_mode == DOEPFER_WIDTH_ACTUAL:
+            width_display = f"{width_value} HP / {width_mm:.2f} mm ({mathematical_width_mm:.2f} mm mathematical)"
+        else:
+            width_display = f"{width_value} HP / {width_mm:.2f} mm"
+        display_name = f"Doepfer Eurorack {width_value} HP{doepfer_width_mode_suffix(doepfer_width_mode)}"
+        if doepfer_width_mode == DOEPFER_WIDTH_ACTUAL and doepfer_actual_width_mm(width_value) is None:
+            conformance_note = (
+                f"Doepfer-style 3U panel using the published actual widths where available; "
+                f"unsupported HP values fall back to the mathematical 5.08 mm grid. "
+                f"Height is 128.5 mm and thickness is {thickness_mm:.1f} mm."
+            )
+        elif doepfer_width_mode == DOEPFER_WIDTH_ACTUAL:
+            conformance_note = (
+                f"Doepfer-style 3U panel using Doepfer's published actual front-panel widths, "
+                f"128.5 mm height, and {thickness_mm:.1f} mm thickness."
+            )
+        else:
+            conformance_note = (
+                f"Doepfer-style 3U panel with 5.08 mm HP grid, 128.5 mm height, and {thickness_mm:.1f} mm thickness."
+            )
     elif standard_key == STANDARD_INTELLIJEL_1U:
         width_value = doepfer_hp
         width_mm = intellijel_1u_width_mm(width_value)
@@ -310,6 +383,7 @@ def build_panel_spec(
         "standard_key": standard_key,
         "standard_label": standard_label(standard_key) + beta_suffix,
         "cutout_type": cutout_type,
+        "doepfer_width_mode": doepfer_width_mode,
         "width_value": width_value,
         "width_unit_label": width_unit_label,
         "width_display": width_display,
@@ -663,7 +737,13 @@ def make_panel_shape_from_spec(spec):
 def pcb_outline_dimensions_from_spec(spec):
     if spec["standard_key"] == STANDARD_PULP_LOGIC_1U:
         width_mm = (spec["width_value"] * 6 * HP_MM) - PCB_CLEARANCE_MM
-    elif spec["standard_key"] in (STANDARD_DOEPFER, STANDARD_INTELLIJEL_1U):
+    elif spec["standard_key"] == STANDARD_DOEPFER:
+        actual_width_mm = doepfer_actual_width_mm(spec["width_value"])
+        if actual_width_mm is not None:
+            width_mm = actual_width_mm - PCB_CLEARANCE_MM
+        else:
+            width_mm = (spec["width_value"] * HP_MM) - PCB_CLEARANCE_MM
+    elif spec["standard_key"] == STANDARD_INTELLIJEL_1U:
         width_mm = (spec["width_value"] * HP_MM) - PCB_CLEARANCE_MM
     else:
         width_mm = spec["width_mm"] - PCB_CLEARANCE_MM
@@ -715,8 +795,22 @@ def create_body_from_shape(doc, shape, hp, cutout_type):
     return body, source
 
 
+def _spec_name_suffix(spec):
+    if spec.get("standard_key") != STANDARD_DOEPFER:
+        return ""
+
+    width_mode = spec.get("doepfer_width_mode", DOEPFER_WIDTH_MATHEMATICAL)
+    if width_mode == DOEPFER_WIDTH_MATHEMATICAL:
+        return ""
+
+    return f"_{width_mode}"
+
+
 def create_body_from_spec(doc, shape, spec):
-    clean_name = f"{spec['standard_key']}_{str(spec['width_value']).replace('.', '_')}_{spec['cutout_type']}"
+    clean_name = (
+        f"{spec['standard_key']}_{str(spec['width_value']).replace('.', '_')}"
+        f"{_spec_name_suffix(spec)}_{spec['cutout_type']}"
+    )
 
     source = doc.addObject("Part::Feature", clean_name + "_BaseShape")
     source.Shape = shape
@@ -758,7 +852,10 @@ def create_body_from_spec(doc, shape, spec):
 def create_pcb_from_spec(doc, spec):
     pcb_shape = make_pcb_shape_from_spec(spec)
 
-    pcb_name = f"{spec['standard_key']}_{str(spec['width_value']).replace('.', '_')}_{spec['cutout_type']}_PCB"
+    pcb_name = (
+        f"{spec['standard_key']}_{str(spec['width_value']).replace('.', '_')}"
+        f"{_spec_name_suffix(spec)}_{spec['cutout_type']}_PCB"
+    )
     pcb = doc.addObject("Part::Feature", pcb_name)
     pcb.Label = f"{spec['display_name']} PCB"
     pcb.Shape = pcb_shape
@@ -802,7 +899,10 @@ def create_reference_sketch(body, source, spec):
         return None
 
     doc = body.Document
-    sketch_name = f"{spec['standard_key']}_{str(spec['width_value']).replace('.', '_')}_Reference"
+    sketch_name = (
+        f"{spec['standard_key']}_{str(spec['width_value']).replace('.', '_')}"
+        f"{_spec_name_suffix(spec)}_Reference"
+    )
 
     try:
         existing = doc.getObject(sketch_name)
@@ -871,8 +971,9 @@ def panel_layout_summary(
     cutout_type,
     center_single_hole_column=CENTER_SINGLE_HOLE_COLUMN,
     narrow_diagonal_key=DOEPFER_NARROW_UPPER_LEFT_LOWER_RIGHT,
+    width_mode=DOEPFER_WIDTH_ACTUAL,
 ):
-    width = eurorack_panel_width(hp)
+    width = doepfer_width_mm(hp, width_mode)
     y_positions = mounting_hole_y_positions()
 
     if hp < FOUR_HOLES_START_HP:
@@ -897,7 +998,7 @@ def panel_layout_summary(
         points = [(x, y) for x in x_positions for y in y_positions]
 
     return (
-        f"Width: {hp_to_width_text(hp)}\n"
+        f"Width: {hp_to_width_text(hp, width_mode)}\n"
         f"Height: {PANEL_HEIGHT:.2f} mm\n"
         f"Thickness: {PANEL_THICKNESS:.2f} mm\n"
         f"Mounting style: {cutout_label(cutout_type)}\n"
@@ -1294,7 +1395,10 @@ def _pcb_object_for_export(obj):
     if spec is None:
         return None
 
-    pcb_name = f"{spec['standard_key']}_{str(spec['width_value']).replace('.', '_')}_{spec['cutout_type']}_PCB"
+    pcb_name = (
+        f"{spec['standard_key']}_{str(spec['width_value']).replace('.', '_')}"
+        f"{_spec_name_suffix(spec)}_{spec['cutout_type']}_PCB"
+    )
     candidate = doc.getObject(pcb_name)
     if candidate is not None:
         return candidate
@@ -1478,7 +1582,10 @@ def _export_spec_from_obj(obj):
             return None
 
         patterns = [
-            (STANDARD_DOEPFER, r"^Doepfer Eurorack (\d+) HP - ([0-9.]+)mm - (circles|slots)$"),
+            (
+                STANDARD_DOEPFER,
+                r"^Doepfer Eurorack (\d+) HP(?: \[(Mathematical|Actual)\])? - ([0-9.]+)mm - (circles|slots)$",
+            ),
             (STANDARD_INTELLIJEL_1U, r"^Intellijel 1U (\d+) HP(?: \[BETA\])? - ([0-9.]+)mm - (circles|slots)$"),
             (STANDARD_PULP_LOGIC_1U, r"^Pulp Logic 1U (\d+) tile\(s\)(?: \[BETA\])? - ([0-9.]+)mm - (circles|slots)$"),
             (STANDARD_KOSMO, r"^Kosmo ([0-9.]+) mm(?: \[BETA\])? - ([0-9.]+)mm - (circles|slots)$"),
@@ -1494,11 +1601,16 @@ def _export_spec_from_obj(obj):
             cutout_type = groups[-1]
             if standard_key == STANDARD_DOEPFER:
                 hp = int(groups[0])
-                thickness_mm = float(groups[1])
+                width_mode_text = groups[1]
+                width_mode = (
+                    DOEPFER_WIDTH_ACTUAL if width_mode_text == "Actual" else DOEPFER_WIDTH_MATHEMATICAL
+                )
+                thickness_mm = float(groups[2])
                 return build_panel_spec(
                     STANDARD_DOEPFER,
                     cutout_type,
                     doepfer_hp=hp,
+                    doepfer_width_mode=width_mode,
                     doepfer_thickness_mm=thickness_mm,
                 )
 
